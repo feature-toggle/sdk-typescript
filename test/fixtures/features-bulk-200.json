@@ -1,0 +1,26 @@
+{
+  "features": [
+    {
+      "key": "new-checkout",
+      "type": "boolean",
+      "value": true,
+      "enabled": true,
+      "deprecated": false
+    },
+    {
+      "key": "theme-variant",
+      "type": "string",
+      "value": "dark",
+      "enabled": true,
+      "deprecated": false
+    },
+    {
+      "key": "legacy-banner",
+      "type": "boolean",
+      "value": true,
+      "enabled": true,
+      "deprecated": true,
+      "inFavorOf": "new-banner"
+    }
+  ]
+}

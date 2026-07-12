@@ -1,0 +1,61 @@
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - "sdk-typescript-v*"
+      - "v*"
+      - "*.*.*"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Resolve version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          case "$TAG" in
+            sdk-typescript-v*) VERSION="${TAG#sdk-typescript-v}" ;;
+            v*) VERSION="${TAG#v}" ;;
+            *) VERSION="$TAG" ;;
+          esac
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Verify package.json version matches tag
+        run: |
+          PKG_VERSION=$(npm pkg get version | tr -d '"')
+          if [ "${{ steps.version.outputs.version }}" != "$PKG_VERSION" ]; then
+            echo "Tag version (${{ steps.version.outputs.version }}) does not match package.json ($PKG_VERSION)"
+            exit 1
+          fi
+
+      - run: bun install
+      - run: bun run build
+      - run: bun run test
+      - run: bun run check-types
+
+      - name: Publish to npm
+        run: |
+          npm install -g npm@latest
+          PKG=$(npm pkg get name | tr -d '"')
+          VERSION=$(npm pkg get version | tr -d '"')
+          if npm view "${PKG}@${VERSION}" version >/dev/null 2>&1; then
+            echo "Version ${VERSION} is already published; skipping."
+            exit 0
+          fi
+          npm publish --access public

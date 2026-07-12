@@ -49,6 +49,10 @@ ft.subscribe(() => {
 });
 ```
 
+## Integration patterns
+
+See [INTEGRATION.md](./INTEGRATION.md) for server loaders, SSR seed, API route gates, subscribe without React, framework notes, and security details.
+
 ## Server (Node.js / SSR)
 
 ```typescript

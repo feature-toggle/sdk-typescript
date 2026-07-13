@@ -268,4 +268,4 @@ These are recipes, not shipped packages:
 
 ## React adapter
 
-If you use React, prefer [`featuretoggle-sdk-react`](https://www.npmjs.com/package/featuretoggle-sdk-react) — `FeatureToggleProvider`, `useFeature`, and `useFeatureToggle` wrap this package with `useSyncExternalStore`. Peer dependency: `featuretoggle-sdk-typescript` ^1.0.2.
+If you use React, prefer [`featuretoggle-sdk-react`](https://www.npmjs.com/package/featuretoggle-sdk-react) — `FeatureToggleProvider`, `useFeature`, and `useFeatureToggle` wrap this package with `useSyncExternalStore`. Peer dependency: `featuretoggle-sdk-typescript` ^1.0.3.

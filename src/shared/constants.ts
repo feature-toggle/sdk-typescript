@@ -6,6 +6,12 @@ export const MAX_FEATURES_RESPONSE_BYTES = 1_048_576;
 /** Max features accepted from a single bulk response. */
 export const MAX_FEATURE_COUNT = 10_000;
 
+/** Default client poll interval when `stream: 'off'` ([ADR 0072]). */
+export const DEFAULT_POLL_INTERVAL_SEC = 30;
+
+/** Minimum poll interval (seconds). */
+export const MIN_POLL_INTERVAL_SEC = 1;
+
 /** Max server-driven poll interval (24 hours). */
 export const MAX_POLL_INTERVAL_SEC = 86_400;
 

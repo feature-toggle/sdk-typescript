@@ -229,6 +229,7 @@ describe("FeatureToggle stream", () => {
       apiKey: "ft_test_key",
       fetch: fetchFn,
       stream: "off",
+      pollInterval: 0,
       visibility,
     });
 

@@ -2,7 +2,13 @@ import { defaultFetch, type FetchFn } from "./shared/fetch-features.js";
 import { FeatureStreamClient } from "./shared/feature-stream.js";
 import { FeatureStore } from "./shared/feature-store.js";
 import { loadFeatures } from "./shared/load-features.js";
+import { PollScheduler } from "./shared/poll-scheduler.js";
+import {
+  coalesceServerPollHeader,
+  resolvePollIntervalSec,
+} from "./shared/resolve-poll-interval.js";
 import { createScopeWarner } from "./shared/scope-warn.js";
+import type { FetchFeaturesResult } from "./shared/types.js";
 import type { FeatureResponse, GetFeaturesOptions } from "./shared/types.js";
 import {
   getVisibilitySource,
@@ -15,6 +21,8 @@ export type FeatureToggleOptions = {
   apiKey: string;
   /** SSE transport — default `auto`. */
   stream?: "auto" | "notify" | "off";
+  /** Poll interval in seconds — only when `stream: 'off'`; `0` disables timer. */
+  pollInterval?: number;
   fetch?: FetchFn;
   visibility?: VisibilitySource | null;
   /** Seed cache before `init()` — hooks can start with data. */
@@ -26,8 +34,10 @@ export class FeatureToggle {
   private readonly apiKey: string;
   private readonly fetchFn: FetchFn;
   private readonly streamMode: "auto" | "notify" | "off";
+  private readonly pollIntervalOption?: number;
   private readonly store = new FeatureStore();
   private readonly visibility: VisibilitySource | null;
+  private readonly pollScheduler: PollScheduler;
   private readonly warnScopeOnce = createScopeWarner();
   private readonly listeners = new Set<() => void>();
 
@@ -35,15 +45,36 @@ export class FeatureToggle {
   private transportStopped = false;
   private streamClient: FeatureStreamClient | null = null;
   private lastStreamVersion: number | null = null;
+  private loadInFlight: Promise<FetchFeaturesResult> | null = null;
+  private effectivePollIntervalSec = 0;
+  private serverPollIntervalSec: number | null = null;
+  private transportActive = false;
+  private warnedPollIntervalIgnored = false;
+  private warnedInvalidPollInterval = false;
 
   constructor(options: FeatureToggleOptions) {
     this.apiKey = options.apiKey;
     this.fetchFn = options.fetch ?? defaultFetch;
     this.streamMode = options.stream ?? "auto";
+    this.pollIntervalOption = this.normalizePollIntervalOption(
+      options.pollInterval,
+    );
     this.visibility =
       options.visibility === undefined
         ? getVisibilitySource()
         : options.visibility;
+    this.pollScheduler = new PollScheduler(this.visibility);
+
+    if (
+      options.pollInterval !== undefined &&
+      this.streamMode !== "off" &&
+      !this.warnedPollIntervalIgnored
+    ) {
+      this.warnedPollIntervalIgnored = true;
+      console.warn(
+        "FeatureToggle: pollInterval is only used when stream is 'off'",
+      );
+    }
 
     if (options.initialFeatures !== undefined) {
       this.store.update(options.initialFeatures, options.initialEtag ?? null);
@@ -52,8 +83,10 @@ export class FeatureToggle {
 
   async init(): Promise<void> {
     this.transportStopped = false;
-    await this.loadFeatures({ throwOnError: true });
-    this.startTransport();
+    this.serverPollIntervalSec = null;
+    const result = await this.loadFeatures({ throwOnError: true });
+    this.startTransport(result);
+    this.transportActive = true;
   }
 
   async refresh(): Promise<void> {
@@ -81,6 +114,8 @@ export class FeatureToggle {
 
   close(): void {
     this.transportStopped = true;
+    this.transportActive = false;
+    this.pollScheduler.stop();
     this.removeVisibilityListener();
     this.streamClient?.close();
     this.streamClient = null;
@@ -92,11 +127,103 @@ export class FeatureToggle {
     }
   }
 
-  private async loadFeatures(options: {
+  private normalizePollIntervalOption(
+    value: number | undefined,
+  ): number | undefined {
+    if (value === undefined) return undefined;
+    if (value === 0) return 0;
+    if (!Number.isFinite(value) || value < 0) {
+      if (!this.warnedInvalidPollInterval) {
+        this.warnedInvalidPollInterval = true;
+        console.warn(
+          "FeatureToggle: invalid pollInterval; falling back to default resolution",
+        );
+      }
+      return undefined;
+    }
+    return value;
+  }
+
+  private getEnvPollInterval(): string | undefined {
+    if (typeof process === "undefined") return undefined;
+    return process.env.FT_POLL_INTERVAL;
+  }
+
+  private resolveIntervalFromResponse(pollIntervalSec: number | null): number {
+    const coalesced = coalesceServerPollHeader(
+      pollIntervalSec,
+      this.serverPollIntervalSec,
+    );
+    this.serverPollIntervalSec = coalesced.lastServerOverrideSec;
+
+    return resolvePollIntervalSec({
+      stream: this.streamMode,
+      pollInterval: this.pollIntervalOption,
+      envPollInterval: this.getEnvPollInterval(),
+      serverHeaderSec: coalesced.serverHeaderSec,
+    });
+  }
+
+  private syncPollTransport(intervalSec: number): void {
+    if (this.streamMode !== "off" || this.transportStopped) return;
+
+    const unchanged =
+      intervalSec === this.effectivePollIntervalSec &&
+      (intervalSec === 0
+        ? !this.pollScheduler.isRunning()
+        : this.pollScheduler.isRunning());
+
+    if (unchanged) {
+      if (intervalSec === 0) {
+        this.setupVisibilityListener();
+      }
+      return;
+    }
+
+    this.effectivePollIntervalSec = intervalSec;
+
+    if (intervalSec > 0) {
+      this.removeVisibilityListener();
+      if (this.pollScheduler.isRunning()) {
+        this.pollScheduler.reschedule(intervalSec);
+      } else {
+        this.pollScheduler.start(intervalSec, async () => {
+          await this.loadFeatures({ throwOnError: false });
+        });
+      }
+      return;
+    }
+
+    this.pollScheduler.stop();
+    this.setupVisibilityListener();
+  }
+
+  private applyPollIntervalFromResult(result: FetchFeaturesResult): void {
+    if (!result.ok) return;
+    const next = this.resolveIntervalFromResponse(result.pollIntervalSec);
+    this.syncPollTransport(next);
+  }
+
+  private loadFeatures(options: {
     throwOnError: boolean;
     omitIfNoneMatch?: boolean;
     streamFeaturesVersion?: number;
-  }): Promise<void> {
+  }): Promise<FetchFeaturesResult> {
+    if (this.loadInFlight) {
+      return this.loadInFlight;
+    }
+
+    this.loadInFlight = this.doLoadFeatures(options).finally(() => {
+      this.loadInFlight = null;
+    });
+    return this.loadInFlight;
+  }
+
+  private async doLoadFeatures(options: {
+    throwOnError: boolean;
+    omitIfNoneMatch?: boolean;
+    streamFeaturesVersion?: number;
+  }): Promise<FetchFeaturesResult> {
     const result = await loadFeatures(this.fetchFn, this.apiKey, this.store, {
       throwOnError: options.throwOnError,
       omitIfNoneMatch: options.omitIfNoneMatch,
@@ -105,23 +232,43 @@ export class FeatureToggle {
       on403: (message) => this.warnScopeOnce(message),
     });
 
+    if (result.ok && this.transportActive) {
+      this.applyPollIntervalFromResult(result);
+    }
+
     if (result.ok && !result.notModified) {
       this.notifyListeners();
     }
+
+    return result;
   }
 
   private handle401(): void {
     console.warn("FeatureToggle: API key unauthorized; cache cleared");
     this.store.clear();
     this.transportStopped = true;
+    this.transportActive = false;
+    this.pollScheduler.stop();
     this.removeVisibilityListener();
     this.streamClient?.close();
     this.streamClient = null;
     this.notifyListeners();
   }
 
-  private startTransport(): void {
+  private startTransport(initResult?: FetchFeaturesResult): void {
+    this.pollScheduler.stop();
     this.removeVisibilityListener();
+
+    if (this.transportStopped) return;
+
+    if (this.streamMode === "off") {
+      const headerSec =
+        initResult?.ok === true ? initResult.pollIntervalSec : null;
+      const interval = this.resolveIntervalFromResponse(headerSec);
+      this.syncPollTransport(interval);
+      return;
+    }
+
     this.setupVisibilityListener();
     this.startStream();
   }
@@ -162,15 +309,24 @@ export class FeatureToggle {
     this.notifyListeners();
   }
 
+  private shouldUseFocusRefetch(): boolean {
+    if (!this.visibility) return false;
+    if (this.streamMode !== "off") return true;
+    return this.effectivePollIntervalSec === 0;
+  }
+
   private setupVisibilityListener(): void {
-    if (!this.visibility || this.visibilityHandler) return;
+    const visibility = this.visibility;
+    if (!visibility || !this.shouldUseFocusRefetch() || this.visibilityHandler) {
+      return;
+    }
 
     this.visibilityHandler = () => {
-      if (this.visibility?.hidden) return;
+      if (visibility.hidden) return;
       void this.refresh();
     };
 
-    this.visibility.addEventListener("visibilitychange", this.visibilityHandler);
+    visibility.addEventListener("visibilitychange", this.visibilityHandler);
   }
 
   private removeVisibilityListener(): void {

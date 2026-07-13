@@ -1,8 +1,8 @@
 import {
   API_BASE_URL,
   INVALID_RESPONSE_STATUS,
-  MAX_POLL_INTERVAL_SEC,
 } from "./constants.js";
+import { parsePollIntervalHeader } from "./resolve-poll-interval.js";
 import {
   isJsonContentType,
   parseFeaturesBulkBody,
@@ -16,14 +16,6 @@ export type FetchFn = (
 
 /** Wraps global fetch so it stays callable when stored and invoked later (browser Illegal invocation). */
 export const defaultFetch: FetchFn = (input, init) => fetch(input, init);
-
-function parsePollIntervalSec(header: string | null): number | null {
-  if (header === null) return null;
-  const parsed = Number.parseInt(header, 10);
-  if (!Number.isFinite(parsed)) return null;
-  if (parsed > MAX_POLL_INTERVAL_SEC) return MAX_POLL_INTERVAL_SEC;
-  return parsed;
-}
 
 export type FetchFeaturesRequest = {
   ifNoneMatch?: string | null;
@@ -60,7 +52,7 @@ export async function fetchFeatures(
   }
 
   const response = await fetchFn(url.toString(), { headers });
-  const pollIntervalSec = parsePollIntervalSec(
+  const pollIntervalSec = parsePollIntervalHeader(
     response.headers.get("X-FeatureToggle-Poll-Interval-Sec"),
   );
 

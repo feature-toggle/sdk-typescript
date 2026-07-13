@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { FeatureToggle } from "../src/index.js";
-import { createMockFetch, createVisibility, feature, jsonResponse } from "./helpers.js";
+import {
+  createMockFetch,
+  createVisibility,
+  feature,
+  jsonResponse,
+  stubProcessEnv,
+} from "./helpers.js";
 
 describe("FeatureToggle stream-off poll", () => {
   afterEach(() => {
@@ -289,5 +295,193 @@ describe("FeatureToggle stream-off poll", () => {
     ft.close();
 
     expect(featureCalls).toBe(2);
+  });
+
+  describe("FT_POLL_INTERVAL", () => {
+    test("uses env var when stream off and server header is 0", async () => {
+      const env = stubProcessEnv({ FT_POLL_INTERVAL: "1" });
+
+      try {
+        let featureCalls = 0;
+        const fetchFn = createMockFetch(() => {
+          featureCalls += 1;
+          return jsonResponse(
+            { features: [feature({ key: `k${featureCalls}` })] },
+            {
+              headers: {
+                ETag: `"${featureCalls}"`,
+                "X-FeatureToggle-Poll-Interval-Sec": "0",
+              },
+            },
+          );
+        });
+
+        const ft = new FeatureToggle({
+          apiKey: "ft_test_key",
+          fetch: fetchFn,
+          stream: "off",
+        });
+
+        await ft.init();
+        expect(featureCalls).toBe(1);
+
+        await new Promise((resolve) => setTimeout(resolve, 1100));
+        ft.close();
+
+        expect(featureCalls).toBe(2);
+      } finally {
+        env.restore();
+      }
+    });
+
+    test("constructor pollInterval overrides env var", async () => {
+      const env = stubProcessEnv({ FT_POLL_INTERVAL: "1" });
+
+      try {
+        let featureCalls = 0;
+        const fetchFn = createMockFetch(() => {
+          featureCalls += 1;
+          return jsonResponse(
+            { features: [feature({ key: "alpha" })] },
+            {
+              headers: {
+                ETag: '"1"',
+                "X-FeatureToggle-Poll-Interval-Sec": "0",
+              },
+            },
+          );
+        });
+
+        const ft = new FeatureToggle({
+          apiKey: "ft_test_key",
+          fetch: fetchFn,
+          stream: "off",
+          pollInterval: 30,
+        });
+
+        await ft.init();
+        await new Promise((resolve) => setTimeout(resolve, 1100));
+        ft.close();
+
+        expect(featureCalls).toBe(1);
+      } finally {
+        env.restore();
+      }
+    });
+
+    test("server header overrides env var", async () => {
+      const env = stubProcessEnv({ FT_POLL_INTERVAL: "30" });
+
+      try {
+        let featureCalls = 0;
+        const fetchFn = createMockFetch(() => {
+          featureCalls += 1;
+          return jsonResponse(
+            { features: [feature({ key: "alpha" })] },
+            {
+              headers: {
+                ETag: '"1"',
+                "X-FeatureToggle-Poll-Interval-Sec": "1",
+              },
+            },
+          );
+        });
+
+        const ft = new FeatureToggle({
+          apiKey: "ft_test_key",
+          fetch: fetchFn,
+          stream: "off",
+        });
+
+        await ft.init();
+        await new Promise((resolve) => setTimeout(resolve, 1100));
+        ft.close();
+
+        expect(featureCalls).toBe(2);
+      } finally {
+        env.restore();
+      }
+    });
+
+    test("header 0 on 304 falls through to env var", async () => {
+      const env = stubProcessEnv({ FT_POLL_INTERVAL: "1" });
+
+      try {
+        let featureCalls = 0;
+        const fetchFn = createMockFetch(() => {
+          featureCalls += 1;
+          if (featureCalls === 1) {
+            return jsonResponse(
+              { features: [feature({ key: "alpha" })] },
+              {
+                headers: {
+                  ETag: '"1"',
+                  "X-FeatureToggle-Poll-Interval-Sec": "1",
+                },
+              },
+            );
+          }
+
+          return new Response(null, {
+            status: 304,
+            headers: {
+              ETag: '"1"',
+              "X-FeatureToggle-Poll-Interval-Sec": "0",
+            },
+          });
+        });
+
+        const ft = new FeatureToggle({
+          apiKey: "ft_test_key",
+          fetch: fetchFn,
+          stream: "off",
+        });
+
+        await ft.init();
+        await new Promise((resolve) => setTimeout(resolve, 1100));
+        ft.close();
+
+        expect(featureCalls).toBe(2);
+      } finally {
+        env.restore();
+      }
+    });
+
+    test("ignores env var when stream is not off", async () => {
+      const env = stubProcessEnv({ FT_POLL_INTERVAL: "1" });
+      const warn = mock(() => {});
+      const original = console.warn;
+      console.warn = warn;
+
+      try {
+        let featureCalls = 0;
+        const fetchFn = createMockFetch((input) => {
+          const url = String(input);
+          if (url.endsWith("/v1/features/stream")) {
+            return new Response(new ReadableStream(), {
+              status: 200,
+              headers: { "Content-Type": "text/event-stream" },
+            });
+          }
+          featureCalls += 1;
+          return jsonResponse({ features: [feature({ key: "alpha" })] });
+        });
+
+        const ft = new FeatureToggle({
+          apiKey: "ft_test_key",
+          fetch: fetchFn,
+          stream: "auto",
+        });
+
+        await ft.init();
+        await new Promise((resolve) => setTimeout(resolve, 1100));
+        ft.close();
+
+        expect(featureCalls).toBe(1);
+      } finally {
+        console.warn = original;
+        env.restore();
+      }
+    });
   });
 });

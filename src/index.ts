@@ -145,8 +145,10 @@ export class FeatureToggle {
   }
 
   private getEnvPollInterval(): string | undefined {
-    if (typeof process === "undefined") return undefined;
-    return process.env.FT_POLL_INTERVAL;
+    const proc = (
+      globalThis as { process?: { env?: Record<string, string | undefined> } }
+    ).process;
+    return proc?.env?.FT_POLL_INTERVAL;
   }
 
   private resolveIntervalFromResponse(pollIntervalSec: number | null): number {

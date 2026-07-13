@@ -108,6 +108,39 @@ describe("resolvePollIntervalSec", () => {
     ).toBe(DEFAULT_POLL_INTERVAL_SEC);
   });
 
+  test("constructor pollInterval wins over env", () => {
+    expect(
+      resolvePollIntervalSec({
+        stream: "off",
+        pollInterval: 15,
+        envPollInterval: "45",
+        serverHeaderSec: 0,
+      }),
+    ).toBe(15);
+  });
+
+  test("ignores invalid env values", () => {
+    for (const envPollInterval of ["", "abc", "0", "-5"]) {
+      expect(
+        resolvePollIntervalSec({
+          stream: "off",
+          envPollInterval,
+          serverHeaderSec: 0,
+        }),
+      ).toBe(DEFAULT_POLL_INTERVAL_SEC);
+    }
+  });
+
+  test("clamps env poll interval", () => {
+    expect(
+      resolvePollIntervalSec({
+        stream: "off",
+        envPollInterval: "999999",
+        serverHeaderSec: 0,
+      }),
+    ).toBe(MAX_POLL_INTERVAL_SEC);
+  });
+
   test("clamps server header", () => {
     expect(
       resolvePollIntervalSec({

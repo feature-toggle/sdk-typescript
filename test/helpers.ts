@@ -87,3 +87,43 @@ export function createVisibility(hidden = false): TestVisibility {
     },
   };
 }
+
+type GlobalWithProcess = typeof globalThis & {
+  process?: { env?: Record<string, string | undefined> };
+};
+
+/** Stub `globalThis.process.env` for Node-style env reads in client tests. */
+export function stubProcessEnv(
+  values: Record<string, string | undefined>,
+): { restore: () => void } {
+  const global = globalThis as GlobalWithProcess;
+  const touched = new Map<string, string | undefined>();
+
+  if (!global.process) {
+    global.process = { env: {} };
+  }
+  if (!global.process.env) {
+    global.process.env = {};
+  }
+
+  for (const [key, value] of Object.entries(values)) {
+    touched.set(key, global.process.env[key]);
+    if (value === undefined) {
+      delete global.process.env[key];
+    } else {
+      global.process.env[key] = value;
+    }
+  }
+
+  return {
+    restore() {
+      for (const [key, previous] of touched) {
+        if (previous === undefined) {
+          delete global.process?.env?.[key];
+        } else {
+          global.process!.env![key] = previous;
+        }
+      }
+    },
+  };
+}

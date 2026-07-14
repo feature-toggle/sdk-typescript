@@ -1,6 +1,6 @@
 # featuretoggle-sdk-typescript
 
-TypeScript SDK for reading features from the FeatureToggle public API.
+TypeScript SDK for reading features from the FeatureToggle public API. **Plain JavaScript works** — TypeScript is optional.
 
 [![Publish to npm](https://github.com/feature-toggle/sdk-typescript/actions/workflows/publish.yml/badge.svg)](https://github.com/feature-toggle/sdk-typescript/actions/workflows/publish.yml)
 
@@ -12,11 +12,33 @@ bun add featuretoggle-sdk-typescript
 npm install featuretoggle-sdk-typescript
 ```
 
+## Module formats
+
+Both entries ship **ESM + CJS + types**:
+
+| Entry | Use for |
+|-------|---------|
+| `featuretoggle-sdk-typescript` | Browser client — SSE stream, `subscribe()`, `close()` |
+| `featuretoggle-sdk-typescript/server` | Node — `init()` + `refresh()` only |
+
+```javascript
+// ESM
+import { FeatureToggle } from "featuretoggle-sdk-typescript";
+import { FeatureToggleServer } from "featuretoggle-sdk-typescript/server";
+
+// CJS
+const { FeatureToggle } = require("featuretoggle-sdk-typescript");
+const { FeatureToggleServer } = require("featuretoggle-sdk-typescript/server");
+```
+
+Using React? See [`featuretoggle-sdk-react`](https://www.npmjs.com/package/featuretoggle-sdk-react).
+
 ## Environment variables
 
 | Variable | Required | Default | Applies to |
 |----------|----------|---------|------------|
 | `FT_API_KEY` | yes | — | Client + server (usually passed to the constructor instead) |
+| `FT_POLL_INTERVAL` | no | `30` | Client when `stream: "off"` (seconds); prefer constructor `pollInterval` when you can |
 
 ## Client (browser / SPA)
 
@@ -27,6 +49,7 @@ import { FeatureToggle } from "featuretoggle-sdk-typescript";
 
 const ft = new FeatureToggle({
   apiKey: import.meta.env.VITE_FT_API_KEY!,
+  stream: "auto", // default — refresh on SSE events
 });
 
 await ft.init();
@@ -38,20 +61,40 @@ if (ft.isEnabled("new-checkout")) {
 const theme = ft.getValue<string>("theme-variant");
 const features = ft.getFeatures({ type: "boolean" });
 
+ft.subscribe(() => {
+  // optional — run after cache updates
+});
+
 ft.close();
 ```
 
-The client loads features on `init()`, opens an **SSE stream** for `features-changed` events (default **auto-refresh**), and refetches when you return to the tab. No background poll timer.
+Default **`stream: "auto"`** opens an SSE stream after `init()`, refetches on `features-changed`, and refetches when you return to the tab. No background poll timer on `"auto"` or `"notify"`.
 
-```typescript
-ft.subscribe(() => {
-  // optional — run after cache updates (stream notify mode or refresh)
-});
-```
+With **`stream: "off"`**, the SDK can run a background refresh on an interval (default **30 seconds**). Pass **`pollInterval: 0`** to disable the timer and rely on tab focus + manual `refresh()` instead.
 
 ## Integration patterns
 
-See [INTEGRATION.md](./INTEGRATION.md) for server loaders, SSR seed, API route gates, subscribe without React, framework notes, and security details.
+Full recipes in [INTEGRATION.md](./INTEGRATION.md):
+
+**Client (browser)**
+
+| Pattern | See |
+|---------|-----|
+| SPA singleton | [INTEGRATION.md](./INTEGRATION.md#spa-singleton-imperative) |
+| Subscribe without a framework | [INTEGRATION.md](./INTEGRATION.md#subscribe-without-a-framework) |
+| Seeded cache (SSR handoff) | [INTEGRATION.md](./INTEGRATION.md#seeded-cache-ssr-handoff-to-client) |
+| Manual lifecycle | [INTEGRATION.md](./INTEGRATION.md#manual-lifecycle) |
+
+**Server (Node)**
+
+| Pattern | See |
+|---------|-----|
+| Module singleton | [INTEGRATION.md](./INTEGRATION.md#module-singleton-default) |
+| Per-request server instance | [INTEGRATION.md](./INTEGRATION.md#per-request-server-instance) |
+| API route / middleware gate | [INTEGRATION.md](./INTEGRATION.md#api-route--middleware-gate) |
+| TTL refresh | [INTEGRATION.md](./INTEGRATION.md#ttl-refresh-singleton-variant) |
+
+React patterns: [featuretoggle-sdk-react INTEGRATION.md](https://github.com/feature-toggle/sdk-react/blob/main/INTEGRATION.md#react-patterns).
 
 ## Server (Node.js / SSR)
 

@@ -51,7 +51,12 @@ describe("FeatureToggle stream-off poll", () => {
       featureCalls += 1;
       return jsonResponse(
         { features: [feature({ key: `k${featureCalls}` })] },
-        { headers: { "X-FeatureToggle-Poll-Interval-Sec": "0", ETag: `"${featureCalls}"` } },
+        {
+          headers: {
+            "X-FeatureToggle-Poll-Interval-Sec": "0",
+            ETag: `"${featureCalls}"`,
+          },
+        },
       );
     });
 

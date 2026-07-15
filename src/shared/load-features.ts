@@ -1,6 +1,6 @@
 import { INVALID_RESPONSE_STATUS, NETWORK_ERROR_STATUS } from "./constants.js";
 import type { FeatureStore } from "./feature-store.js";
-import { fetchFeatures, type FetchFn } from "./fetch-features.js";
+import { type FetchFn, fetchFeatures } from "./fetch-features.js";
 import type { FetchFeaturesResult } from "./types.js";
 
 export type LoadFeaturesOptions = {
@@ -81,7 +81,9 @@ export async function loadFeatures(
     );
   } catch {
     if (options.throwOnError) {
-      throw new Error("FeatureToggle: failed to fetch features (network error)");
+      throw new Error(
+        "FeatureToggle: failed to fetch features (network error)",
+      );
     }
 
     console.warn(

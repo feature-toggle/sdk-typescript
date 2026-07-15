@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { parseSseChunk, readFeaturesVersionFromEventData } from "../src/shared/sse-parse.js";
+import {
+  parseSseChunk,
+  readFeaturesVersionFromEventData,
+} from "../src/shared/sse-parse.js";
 
 describe("parseSseChunk", () => {
   test("parses features-changed event", () => {
-    const chunk =
-      'event: features-changed\ndata: {"featuresVersion":42}\n\n';
+    const chunk = 'event: features-changed\ndata: {"featuresVersion":42}\n\n';
     const { events, remainder } = parseSseChunk(chunk);
     expect(remainder).toBe("");
     expect(events).toEqual([
@@ -31,7 +33,9 @@ describe("readFeaturesVersionFromEventData", () => {
   });
 
   test("rejects invalid payload", () => {
-    expect(readFeaturesVersionFromEventData({ featuresVersion: "x" })).toBeNull();
+    expect(
+      readFeaturesVersionFromEventData({ featuresVersion: "x" }),
+    ).toBeNull();
     expect(readFeaturesVersionFromEventData(null)).toBeNull();
   });
 });

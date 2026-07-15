@@ -8,7 +8,9 @@ describe("FeatureToggle", () => {
   });
 
   test("init throws on first fetch failure", async () => {
-    const fetchFn = createDefaultMockFetch(() => new Response(null, { status: 500 }));
+    const fetchFn = createDefaultMockFetch(
+      () => new Response(null, { status: 500 }),
+    );
     const ft = new FeatureToggle({
       apiKey: "ft_test_key",
       fetch: fetchFn,
@@ -30,7 +32,9 @@ describe("FeatureToggle", () => {
   });
 
   test("init throws on 401", async () => {
-    const fetchFn = createDefaultMockFetch(() => new Response(null, { status: 401 }));
+    const fetchFn = createDefaultMockFetch(
+      () => new Response(null, { status: 401 }),
+    );
     const ft = new FeatureToggle({
       apiKey: "ft_test_key",
       fetch: fetchFn,

@@ -7,7 +7,8 @@ export function filterFeatures(
   if (!options) return features;
 
   return features.filter((feature) => {
-    if (options.type !== undefined && feature.type !== options.type) return false;
+    if (options.type !== undefined && feature.type !== options.type)
+      return false;
     if (
       options.deprecated !== undefined &&
       feature.deprecated !== options.deprecated

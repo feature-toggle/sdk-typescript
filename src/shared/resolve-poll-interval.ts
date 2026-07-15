@@ -66,7 +66,9 @@ export function coalesceServerPollHeader(
 }
 
 /** Effective background poll interval in seconds; 0 means no timer. */
-export function resolvePollIntervalSec(input: ResolvePollIntervalInput): number {
+export function resolvePollIntervalSec(
+  input: ResolvePollIntervalInput,
+): number {
   if (input.stream !== "off") return 0;
 
   if (input.pollInterval === 0) return 0;

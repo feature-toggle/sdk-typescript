@@ -1,6 +1,6 @@
-import { defaultFetch, type FetchFn } from "./shared/fetch-features.js";
-import { FeatureStreamClient } from "./shared/feature-stream.js";
 import { FeatureStore } from "./shared/feature-store.js";
+import { FeatureStreamClient } from "./shared/feature-stream.js";
+import { defaultFetch, type FetchFn } from "./shared/fetch-features.js";
 import { loadFeatures } from "./shared/load-features.js";
 import { PollScheduler } from "./shared/poll-scheduler.js";
 import {
@@ -8,8 +8,11 @@ import {
   resolvePollIntervalSec,
 } from "./shared/resolve-poll-interval.js";
 import { createScopeWarner } from "./shared/scope-warn.js";
-import type { FetchFeaturesResult } from "./shared/types.js";
-import type { FeatureResponse, GetFeaturesOptions } from "./shared/types.js";
+import type {
+  FeatureResponse,
+  FetchFeaturesResult,
+  GetFeaturesOptions,
+} from "./shared/types.js";
 import {
   getVisibilitySource,
   type VisibilitySource,
@@ -289,7 +292,10 @@ export class FeatureToggle {
   }
 
   private async handleStreamVersion(featuresVersion: number): Promise<void> {
-    if (this.lastStreamVersion !== null && featuresVersion <= this.lastStreamVersion) {
+    if (
+      this.lastStreamVersion !== null &&
+      featuresVersion <= this.lastStreamVersion
+    ) {
       return;
     }
     this.lastStreamVersion = featuresVersion;
@@ -319,7 +325,11 @@ export class FeatureToggle {
 
   private setupVisibilityListener(): void {
     const visibility = this.visibility;
-    if (!visibility || !this.shouldUseFocusRefetch() || this.visibilityHandler) {
+    if (
+      !visibility ||
+      !this.shouldUseFocusRefetch() ||
+      this.visibilityHandler
+    ) {
       return;
     }
 

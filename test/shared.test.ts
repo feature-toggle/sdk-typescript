@@ -1,9 +1,13 @@
 import { describe, expect, mock, test } from "bun:test";
 import { FeatureToggleServer } from "../src/server.js";
-import { MAX_FEATURE_COUNT, MAX_POLL_INTERVAL_SEC, NETWORK_ERROR_STATUS } from "../src/shared/constants.js";
-import { filterFeatures } from "../src/shared/filter-features.js";
+import {
+  MAX_FEATURE_COUNT,
+  MAX_POLL_INTERVAL_SEC,
+  NETWORK_ERROR_STATUS,
+} from "../src/shared/constants.js";
 import { FeatureStore } from "../src/shared/feature-store.js";
 import { fetchFeatures } from "../src/shared/fetch-features.js";
+import { filterFeatures } from "../src/shared/filter-features.js";
 import { applyFetchResult, loadFeatures } from "../src/shared/load-features.js";
 import {
   isJsonContentType,
@@ -26,7 +30,9 @@ describe("filterFeatures", () => {
   });
 
   test("filters by deprecated", () => {
-    expect(filterFeatures(features, { deprecated: false })).toEqual([features[0]]);
+    expect(filterFeatures(features, { deprecated: false })).toEqual([
+      features[0],
+    ]);
   });
 });
 
@@ -43,10 +49,7 @@ describe("FeatureStore", () => {
 
   test("skips entries with empty key on update", () => {
     const store = new FeatureStore();
-    store.update(
-      [feature({ key: "a" }), feature({ key: "" })],
-      '"1"',
-    );
+    store.update([feature({ key: "a" }), feature({ key: "" })], '"1"');
 
     expect(store.getFeatures()).toHaveLength(1);
     expect(store.isEnabled("a")).toBe(true);
@@ -103,7 +106,13 @@ describe("parseFeaturesBulkBody", () => {
       JSON.stringify({
         features: [
           feature({ key: "a" }),
-          { key: "", type: "boolean", value: true, enabled: true, deprecated: false },
+          {
+            key: "",
+            type: "boolean",
+            value: true,
+            enabled: true,
+            deprecated: false,
+          },
           feature({ key: "a", value: false }),
         ],
       }),
@@ -139,8 +148,12 @@ describe("fetchFeatures", () => {
 
     const fetchFn = createMockFetch((input, init) => {
       url = String(input);
-      auth = init?.headers ? String(new Headers(init.headers).get("Authorization")) : "";
-      etag = init?.headers ? String(new Headers(init.headers).get("If-None-Match")) : "";
+      auth = init?.headers
+        ? String(new Headers(init.headers).get("Authorization"))
+        : "";
+      etag = init?.headers
+        ? String(new Headers(init.headers).get("If-None-Match"))
+        : "";
       return jsonResponse({ features: [] }, { headers: { ETag: '"2"' } });
     });
 
@@ -169,14 +182,15 @@ describe("fetchFeatures", () => {
   });
 
   test("handles 304 not modified", async () => {
-    const fetchFn = createMockFetch(() =>
-      new Response(null, {
-        status: 304,
-        headers: {
-          ETag: '"1"',
-          "X-FeatureToggle-Poll-Interval-Sec": "30",
-        },
-      }),
+    const fetchFn = createMockFetch(
+      () =>
+        new Response(null, {
+          status: 304,
+          headers: {
+            ETag: '"1"',
+            "X-FeatureToggle-Poll-Interval-Sec": "30",
+          },
+        }),
     );
 
     const result = await fetchFeatures(fetchFn, "ft_test_key", '"1"');
@@ -186,11 +200,12 @@ describe("fetchFeatures", () => {
   });
 
   test("rejects non-json content type on 200", async () => {
-    const fetchFn = createMockFetch(() =>
-      new Response("<html></html>", {
-        status: 200,
-        headers: { "Content-Type": "text/html" },
-      }),
+    const fetchFn = createMockFetch(
+      () =>
+        new Response("<html></html>", {
+          status: 200,
+          headers: { "Content-Type": "text/html" },
+        }),
     );
 
     const result = await fetchFeatures(fetchFn, "ft_test_key");
@@ -199,11 +214,12 @@ describe("fetchFeatures", () => {
   });
 
   test("rejects invalid json body on 200", async () => {
-    const fetchFn = createMockFetch(() =>
-      new Response(JSON.stringify({ notFeatures: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+    const fetchFn = createMockFetch(
+      () =>
+        new Response(JSON.stringify({ notFeatures: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
     );
 
     const result = await fetchFeatures(fetchFn, "ft_test_key");
@@ -212,14 +228,15 @@ describe("fetchFeatures", () => {
   });
 
   test("parses 403 error message from response body", async () => {
-    const fetchFn = createMockFetch(() =>
-      new Response(
-        JSON.stringify({
-          error:
-            "Test keys are valid on localhost only. Use a live key for deployed apps.",
-        }),
-        { status: 403, headers: { "Content-Type": "application/json" } },
-      ),
+    const fetchFn = createMockFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            error:
+              "Test keys are valid on localhost only. Use a live key for deployed apps.",
+          }),
+          { status: 403, headers: { "Content-Type": "application/json" } },
+        ),
     );
 
     const result = await fetchFeatures(fetchFn, "ft_test_key");
@@ -364,7 +381,10 @@ describe("FeatureToggleServer", () => {
       }),
     );
 
-    const ft = new FeatureToggleServer({ apiKey: "ft_test_key", fetch: fetchFn });
+    const ft = new FeatureToggleServer({
+      apiKey: "ft_test_key",
+      fetch: fetchFn,
+    });
     await ft.init();
 
     expect(ft.isEnabled("alpha")).toBe(true);
@@ -386,7 +406,10 @@ describe("FeatureToggleServer", () => {
     const original = console.warn;
     console.warn = warn;
 
-    const ft = new FeatureToggleServer({ apiKey: "ft_test_key", fetch: fetchFn });
+    const ft = new FeatureToggleServer({
+      apiKey: "ft_test_key",
+      fetch: fetchFn,
+    });
     await ft.init();
     await ft.refresh();
 
@@ -412,7 +435,10 @@ describe("FeatureToggleServer", () => {
     const original = console.warn;
     console.warn = warn;
 
-    const ft = new FeatureToggleServer({ apiKey: "ft_test_key", fetch: fetchFn });
+    const ft = new FeatureToggleServer({
+      apiKey: "ft_test_key",
+      fetch: fetchFn,
+    });
     await ft.init();
     await ft.refresh();
 
@@ -436,7 +462,10 @@ describe("FeatureToggleServer", () => {
       return new Response(null, { status: 401 });
     });
 
-    const ft = new FeatureToggleServer({ apiKey: "ft_test_key", fetch: fetchFn });
+    const ft = new FeatureToggleServer({
+      apiKey: "ft_test_key",
+      fetch: fetchFn,
+    });
     await ft.init();
     await ft.refresh();
 

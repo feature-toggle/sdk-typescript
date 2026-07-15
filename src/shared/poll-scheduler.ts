@@ -57,7 +57,10 @@ export class PollScheduler {
       this.scheduleNext();
     };
 
-    this.visibility.addEventListener("visibilitychange", this.visibilityHandler);
+    this.visibility.addEventListener(
+      "visibilitychange",
+      this.visibilityHandler,
+    );
   }
 
   private detachVisibilityListener(): void {

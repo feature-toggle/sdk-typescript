@@ -1,9 +1,9 @@
 import { API_BASE_URL } from "./constants.js";
 import type { FetchFn } from "./fetch-features.js";
 import {
+  type ParsedSseEvent,
   parseSseChunk,
   readFeaturesVersionFromEventData,
-  type ParsedSseEvent,
 } from "./sse-parse.js";
 
 export type FeatureStreamCallbacks = {
@@ -63,7 +63,10 @@ export class FeatureStreamClient {
       this.reconnectTimeout = null;
       void this.connectLoop();
     }, this.reconnectDelayMs);
-    this.reconnectDelayMs = Math.min(this.reconnectDelayMs * 2, MAX_RECONNECT_MS);
+    this.reconnectDelayMs = Math.min(
+      this.reconnectDelayMs * 2,
+      MAX_RECONNECT_MS,
+    );
   }
 
   private async connectLoop(): Promise<void> {
@@ -74,10 +77,13 @@ export class FeatureStreamClient {
     this.abortController = abortController;
 
     try {
-      const response = await this.fetchFn(`${API_BASE_URL}/v1/features/stream`, {
-        headers: { Authorization: `Bearer ${this.apiKey}` },
-        signal: abortController.signal,
-      });
+      const response = await this.fetchFn(
+        `${API_BASE_URL}/v1/features/stream`,
+        {
+          headers: { Authorization: `Bearer ${this.apiKey}` },
+          signal: abortController.signal,
+        },
+      );
 
       if (!response.ok || !response.body) {
         this.callbacks.onDisconnect?.();
@@ -100,7 +106,10 @@ export class FeatureStreamClient {
 
         for (const event of parsed.events) {
           this.callbacks.onEvent?.(event);
-          if (event.event === "features-changed" || event.event === "connected") {
+          if (
+            event.event === "features-changed" ||
+            event.event === "connected"
+          ) {
             const version = readFeaturesVersionFromEventData(event.data);
             if (version !== null) {
               this.callbacks.onFeaturesChanged(version);

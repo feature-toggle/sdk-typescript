@@ -1,5 +1,5 @@
-import type { VisibilitySource } from "../src/shared/visibility.js";
 import type { FeatureResponse } from "../src/shared/types.js";
+import type { VisibilitySource } from "../src/shared/visibility.js";
 
 export function feature(
   overrides: Partial<FeatureResponse> & Pick<FeatureResponse, "key">,
@@ -13,10 +13,7 @@ export function feature(
   };
 }
 
-export function jsonResponse(
-  body: unknown,
-  init: ResponseInit = {},
-): Response {
+export function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   const headers = new Headers(init.headers);
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -93,9 +90,9 @@ type GlobalWithProcess = typeof globalThis & {
 };
 
 /** Stub `globalThis.process.env` for Node-style env reads in client tests. */
-export function stubProcessEnv(
-  values: Record<string, string | undefined>,
-): { restore: () => void } {
+export function stubProcessEnv(values: Record<string, string | undefined>): {
+  restore: () => void;
+} {
   const global = globalThis as GlobalWithProcess;
   const touched = new Map<string, string | undefined>();
 

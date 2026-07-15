@@ -1,12 +1,9 @@
-import {
-  API_BASE_URL,
-  INVALID_RESPONSE_STATUS,
-} from "./constants.js";
-import { parsePollIntervalHeader } from "./resolve-poll-interval.js";
+import { API_BASE_URL, INVALID_RESPONSE_STATUS } from "./constants.js";
 import {
   isJsonContentType,
   parseFeaturesBulkBody,
 } from "./parse-features-response.js";
+import { parsePollIntervalHeader } from "./resolve-poll-interval.js";
 import type { FetchFeaturesResult } from "./types.js";
 
 export type FetchFn = (
@@ -26,7 +23,11 @@ export type FetchFeaturesRequest = {
 function normalizeFetchRequest(
   request?: string | null | FetchFeaturesRequest,
 ): FetchFeaturesRequest {
-  if (request === null || request === undefined || typeof request === "string") {
+  if (
+    request === null ||
+    request === undefined ||
+    typeof request === "string"
+  ) {
     return { ifNoneMatch: request ?? undefined };
   }
   return request;

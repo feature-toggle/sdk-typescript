@@ -20,4 +20,3 @@ export const INVALID_RESPONSE_STATUS = 502;
 
 /** Synthetic status when fetch rejects (network error). */
 export const NETWORK_ERROR_STATUS = 503;
-

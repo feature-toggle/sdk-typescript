@@ -38,7 +38,9 @@ export class FeatureStore {
       (feature) => typeof feature.key === "string" && feature.key.length > 0,
     );
     this.featuresList = valid;
-    this.featuresByKey = new Map(valid.map((feature) => [feature.key, feature]));
+    this.featuresByKey = new Map(
+      valid.map((feature) => [feature.key, feature]),
+    );
     this.etag = etag;
   }
 

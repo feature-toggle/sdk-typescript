@@ -1,5 +1,5 @@
-import { defaultFetch, type FetchFn } from "./shared/fetch-features.js";
 import { FeatureStore } from "./shared/feature-store.js";
+import { defaultFetch, type FetchFn } from "./shared/fetch-features.js";
 import { loadFeatures } from "./shared/load-features.js";
 import { createScopeWarner } from "./shared/scope-warn.js";
 import type { FeatureResponse, GetFeaturesOptions } from "./shared/types.js";
@@ -42,7 +42,9 @@ export class FeatureToggleServer {
     return this.store.getFeatures(options);
   }
 
-  private async loadFeatures(options: { throwOnError: boolean }): Promise<void> {
+  private async loadFeatures(options: {
+    throwOnError: boolean;
+  }): Promise<void> {
     await loadFeatures(this.fetchFn, this.apiKey, this.store, {
       throwOnError: options.throwOnError,
       on401: () => this.handle401(),

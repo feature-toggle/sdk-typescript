@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { FeatureToggle } from "../src/index.js";
-import { parseFeaturesBulkBody } from "../src/shared/parse-features-response.js";
 import { FeatureStore } from "../src/shared/feature-store.js";
-import { createDefaultMockFetch, jsonResponse } from "./helpers.js";
+import { parseFeaturesBulkBody } from "../src/shared/parse-features-response.js";
 import fixture from "./fixtures/features-bulk-200.json";
+import { createDefaultMockFetch, jsonResponse } from "./helpers.js";
 
 describe("golden fixture", () => {
   test("parse → store → single subscribe notification", async () => {

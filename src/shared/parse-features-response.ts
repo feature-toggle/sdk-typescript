@@ -1,7 +1,4 @@
-import {
-  MAX_FEATURE_COUNT,
-  MAX_FEATURES_RESPONSE_BYTES,
-} from "./constants.js";
+import { MAX_FEATURE_COUNT, MAX_FEATURES_RESPONSE_BYTES } from "./constants.js";
 import type { FeatureResponse, FeatureType } from "./types.js";
 
 const FEATURE_TYPES = new Set<FeatureType>([
@@ -22,7 +19,10 @@ function parseFeatureEntry(raw: unknown): FeatureResponse | null {
 
   const entry = raw as Record<string, unknown>;
   if (typeof entry.key !== "string" || entry.key.length === 0) return null;
-  if (typeof entry.type !== "string" || !FEATURE_TYPES.has(entry.type as FeatureType)) {
+  if (
+    typeof entry.type !== "string" ||
+    !FEATURE_TYPES.has(entry.type as FeatureType)
+  ) {
     return null;
   }
   if (typeof entry.enabled !== "boolean") return null;

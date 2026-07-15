@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { FeatureToggle } from "../src/index.js";
-import { createMockFetch, createVisibility, feature, jsonResponse } from "./helpers.js";
+import {
+  createMockFetch,
+  createVisibility,
+  feature,
+  jsonResponse,
+} from "./helpers.js";
 
 function sseResponse(events: string): Response {
   const stream = new ReadableStream({
@@ -140,9 +145,7 @@ describe("FeatureToggle stream", () => {
     const fetchFn = createMockFetch((input) => {
       const url = String(input);
       if (url.endsWith("/v1/features/stream")) {
-        return sseResponse(
-          'event: connected\ndata: {"featuresVersion":2}\n\n',
-        );
+        return sseResponse('event: connected\ndata: {"featuresVersion":2}\n\n');
       }
 
       featureCalls += 1;
@@ -221,7 +224,12 @@ describe("FeatureToggle stream", () => {
       featureCalls += 1;
       return jsonResponse(
         { features: [feature({ key: `k${featureCalls}` })] },
-        { headers: { "X-FeatureToggle-Poll-Interval-Sec": "0", ETag: `"${featureCalls}"` } },
+        {
+          headers: {
+            "X-FeatureToggle-Poll-Interval-Sec": "0",
+            ETag: `"${featureCalls}"`,
+          },
+        },
       );
     });
 

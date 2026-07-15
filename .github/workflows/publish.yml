@@ -45,9 +45,8 @@ jobs:
           fi
 
       - run: bun install
+      - run: bun run verify
       - run: bun run build
-      - run: bun run test
-      - run: bun run check-types
 
       - name: Publish to npm
         run: |

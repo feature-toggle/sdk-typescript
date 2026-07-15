@@ -229,7 +229,7 @@ describe("FeatureToggle stream-off poll", () => {
 
   test("304 without poll header keeps last server override interval", async () => {
     let featureCalls = 0;
-    const fetchFn = createMockFetch((input, init) => {
+    const fetchFn = createMockFetch(() => {
       featureCalls += 1;
       if (featureCalls === 1) {
         return jsonResponse(
@@ -265,7 +265,7 @@ describe("FeatureToggle stream-off poll", () => {
 
   test("304 with poll header 0 falls back to client poll interval", async () => {
     let featureCalls = 0;
-    const fetchFn = createMockFetch((input, init) => {
+    const fetchFn = createMockFetch(() => {
       featureCalls += 1;
       if (featureCalls === 1) {
         return jsonResponse(

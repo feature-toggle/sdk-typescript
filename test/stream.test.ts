@@ -29,7 +29,7 @@ describe("FeatureToggle stream", () => {
   test("default fetch opens stream without illegal invocation", async () => {
     const rawFetch = globalThis.fetch;
     let streamCalls = 0;
-    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = ((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/v1/features/stream")) {
         streamCalls += 1;

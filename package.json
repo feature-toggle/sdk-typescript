@@ -31,9 +31,12 @@
     "build": "tsup",
     "test": "bun test",
     "lint": "eslint .",
+    "format": "biome check --write .",
+    "format:check": "biome ci .",
     "check-types": "tsc --noEmit"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.4",
     "@eslint/js": "^9.28.0",
     "eslint": "^9.28.0",
     "tsup": "^8.5.0",

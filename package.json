@@ -31,8 +31,8 @@
     "build": "tsup",
     "test": "bun test",
     "lint": "eslint .",
-    "format": "biome check --write .",
-    "format:check": "biome ci .",
+    "format": "biome check --write --config-path biome.standalone.json .",
+    "format:check": "biome ci --config-path biome.standalone.json .",
     "check-types": "tsc --noEmit",
     "verify": "bun run format:check && bun run lint && bun run check-types && bun run test"
   },

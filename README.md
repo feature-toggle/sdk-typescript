@@ -1,24 +1,26 @@
 # featuretoggle-sdk-typescript
 
-TypeScript SDK for reading features from the FeatureToggle public API. **Plain JavaScript works** — TypeScript is optional.
+TypeScript SDK for reading features from the FeatureToggle public API — browser client and Node server entry. Plain JavaScript works.
 
 [![Publish to npm](https://github.com/feature-toggle/sdk-typescript/actions/workflows/publish.yml/badge.svg)](https://github.com/feature-toggle/sdk-typescript/actions/workflows/publish.yml)
 
 ## Install
 
 ```bash
-bun add featuretoggle-sdk-typescript
-# or
 npm install featuretoggle-sdk-typescript
+# or
+pnpm add featuretoggle-sdk-typescript
+# or
+yarn add featuretoggle-sdk-typescript
+# or
+bun add featuretoggle-sdk-typescript
 ```
 
-## Module formats
-
-Both entries ship **ESM + CJS + types**:
+Both entries ship ESM, CJS, and types:
 
 | Entry | Use for |
 |-------|---------|
-| `featuretoggle-sdk-typescript` | Browser client — SSE stream, `subscribe()`, `close()` |
+| `featuretoggle-sdk-typescript` | Browser — SSE, `subscribe()`, `close()` |
 | `featuretoggle-sdk-typescript/server` | Node — `init()` + `refresh()` only |
 
 ```javascript
@@ -31,25 +33,15 @@ const { FeatureToggle } = require("featuretoggle-sdk-typescript");
 const { FeatureToggleServer } = require("featuretoggle-sdk-typescript/server");
 ```
 
-Using React? See [`featuretoggle-sdk-react`](https://www.npmjs.com/package/featuretoggle-sdk-react).
+React UI: [`featuretoggle-sdk-react`](https://www.npmjs.com/package/featuretoggle-sdk-react).
 
-## Environment variables
-
-| Variable | Required | Default | Applies to |
-|----------|----------|---------|------------|
-| `FT_API_KEY` | yes | — | Client + server (usually passed to the constructor instead) |
-| `FT_POLL_INTERVAL` | no | `30` | Client when `stream: "off"` (seconds); prefer constructor `pollInterval` when you can |
-
-## Client (browser / SPA)
-
-Use a **non-production** environment key (`ft_test_`) in the browser — see [Security](#security). Never embed production keys (`ft_live_`) in client bundles.
+## Quick start
 
 ```typescript
 import { FeatureToggle } from "featuretoggle-sdk-typescript";
 
 const ft = new FeatureToggle({
   apiKey: import.meta.env.VITE_FT_API_KEY!,
-  stream: "auto", // default — refresh on SSE events
 });
 
 await ft.init();
@@ -59,44 +51,13 @@ if (ft.isEnabled("new-checkout")) {
 }
 
 const theme = ft.getValue<string>("theme-variant");
-const features = ft.getFeatures({ type: "boolean" });
-
 ft.subscribe(() => {
-  // optional — run after cache updates
+  /* cache updated */
 });
-
 ft.close();
 ```
 
-Default **`stream: "auto"`** opens an SSE stream after `init()`, refetches on `features-changed`, and refetches when you return to the tab. No background poll timer on `"auto"` or `"notify"`.
-
-With **`stream: "off"`**, the SDK can run a background refresh on an interval (default **30 seconds**). Pass **`pollInterval: 0`** to disable the timer and rely on tab focus + manual `refresh()` instead.
-
-## Integration patterns
-
-Full recipes in [INTEGRATION.md](./INTEGRATION.md):
-
-**Client (browser)**
-
-| Pattern | See |
-|---------|-----|
-| SPA singleton | [INTEGRATION.md](./INTEGRATION.md#spa-singleton-imperative) |
-| Subscribe without a framework | [INTEGRATION.md](./INTEGRATION.md#subscribe-without-a-framework) |
-| Seeded cache (SSR handoff) | [INTEGRATION.md](./INTEGRATION.md#seeded-cache-ssr-handoff-to-client) |
-| Manual lifecycle | [INTEGRATION.md](./INTEGRATION.md#manual-lifecycle) |
-
-**Server (Node)**
-
-| Pattern | See |
-|---------|-----|
-| Module singleton | [INTEGRATION.md](./INTEGRATION.md#module-singleton-default) |
-| Per-request server instance | [INTEGRATION.md](./INTEGRATION.md#per-request-server-instance) |
-| API route / middleware gate | [INTEGRATION.md](./INTEGRATION.md#api-route--middleware-gate) |
-| TTL refresh | [INTEGRATION.md](./INTEGRATION.md#ttl-refresh-singleton-variant) |
-
-React patterns: [featuretoggle-sdk-react INTEGRATION.md](https://github.com/feature-toggle/sdk-react/blob/main/INTEGRATION.md#react-patterns).
-
-## Server (Node.js / SSR)
+Server entry:
 
 ```typescript
 import { FeatureToggleServer } from "featuretoggle-sdk-typescript/server";
@@ -106,19 +67,36 @@ const ft = new FeatureToggleServer({
 });
 
 await ft.init();
+await ft.refresh();
 
 if (ft.isEnabled("new-checkout")) {
   // ...
 }
-
-await ft.refresh();
 ```
 
-No background polling — fetch on `init()` and `refresh()` only. Create one instance per process (module singleton). **Await `refresh()`** before reads when handling concurrent requests from one instance.
+## Cookbook
 
-## API reference
+Full recipes in [INTEGRATION.md](./INTEGRATION.md) (Cookbook):
+
+| Pattern | See |
+|---------|-----|
+| SPA singleton | [INTEGRATION.md](./INTEGRATION.md#spa-singleton-imperative) |
+| Subscribe without a framework | [INTEGRATION.md](./INTEGRATION.md#subscribe-without-a-framework) |
+| Seeded cache (SSR handoff) | [INTEGRATION.md](./INTEGRATION.md#seeded-cache-ssr-handoff-to-client) |
+| Manual lifecycle | [INTEGRATION.md](./INTEGRATION.md#manual-lifecycle) |
+| Module singleton | [INTEGRATION.md](./INTEGRATION.md#module-singleton-default) |
+| Per-request server instance | [INTEGRATION.md](./INTEGRATION.md#per-request-server-instance) |
+| API route / middleware gate | [INTEGRATION.md](./INTEGRATION.md#api-route--middleware-gate) |
+| TTL refresh | [INTEGRATION.md](./INTEGRATION.md#ttl-refresh-singleton-variant) |
+| SSR split | [INTEGRATION.md](./INTEGRATION.md#ssr-split-server-loader--client-ui) |
+
+React patterns: [React cookbook](https://github.com/feature-toggle/sdk-react/blob/main/INTEGRATION.md).
+
+## API
 
 ### `FeatureToggle`
+
+Options: `apiKey` (or `FT_API_KEY`), `stream` (default `"auto"`), `pollInterval` (default `30` when `stream: "off"`; `0` disables; or `FT_POLL_INTERVAL`), `initialFeatures` / `initialEtag`, `fetch`.
 
 | Method | Description |
 |--------|-------------|
@@ -127,37 +105,17 @@ No background polling — fetch on `init()` and `refresh()` only. Create one ins
 | `isEnabled(key)` | `true` when the feature is enabled in cache |
 | `getValue<T>(key)` | Resolved value or `undefined` |
 | `getFeatures(options?)` | Filtered copy of cached features |
-| `subscribe(listener)` | Callback when cache updates; returns unsubscribe fn |
+| `subscribe(listener)` | Callback when cache updates; returns unsubscribe |
 | `close()` | Close stream and stop transport |
+
+`stream` / `pollInterval` semantics: [Caching and syncs](https://featuretoggle.com/docs/caching). Shared env vars: [SDKs](https://featuretoggle.com/docs/sdks).
 
 ### `FeatureToggleServer`
 
-Same read methods as the client, plus `init()` and `refresh()`. No `close()` or background transport.
+Same read methods plus `init()` and `refresh()`. No `close()` or background transport. Options: `apiKey`, optional `fetch`.
 
 ### `FeatureResponse`
 
-Public type mirroring the API response shape: `key`, `type`, `value`, `enabled`, `deprecated`, optional `inFavorOf`.
+`key`, `type`, `value`, `enabled`, `deprecated`, optional `inFavorOf`. HTTP contract: [Feature API](https://featuretoggle.com/docs/feature-api).
 
-## Deprecated features
-
-Enabled deprecated features are included in the default bulk fetch. The SDK logs a one-time `console.warn` per feature key when accessed via `isEnabled()` or `getValue()`.
-
-## API keys
-
-Create an API key in the [FeatureToggle dashboard](https://app.featuretoggle.com) for your project environment.
-
-## Security
-
-The SDK is **read-only** — it cannot create, update, or delete features. Feature management is done in the dashboard.
-
-**API keys in the browser are public.** Any key in a client bundle (`VITE_*`, inlined env) can be extracted. Use **test keys** (`ft_test_`) with `featuretoggle-sdk-typescript` in the browser — they only work from **localhost** (`http://localhost`, `127.0.0.1`, `::1`). Deployed apps and server-side fetches need **live keys** (`ft_live_`) from a paid plan, via `featuretoggle-sdk-typescript/server` on trusted backends.
-
-On **403** scope errors, the SDK logs a **one-time** `console.warn` per instance with the API error message.
-
-**Read-only, not secret.** A key grants read access to all enabled features for one environment. The public API accepts cross-origin requests with a valid Bearer token. Revoke compromised keys in the dashboard; the SDK clears its cache on `401`.
-
-**Features are not authorization.** Client-side `isEnabled()` is for UX only — use `featuretoggle-sdk-typescript/server` on your backend for access control and sensitive routing.
-
-**Sanitize feature values.** Treat JSON from `getValue()` as untrusted before rendering in HTML or executing as code.
-
-**Custom `fetch`.** The optional `fetch` constructor option is for unit tests. Do not log request headers in production wrappers.
+Enabled deprecated features are included in the bulk fetch. The SDK logs a one-time `console.warn` per key on `isEnabled()` / `getValue()`. On **401**, cache clears and transport stops. On **403**, one-time `console.warn` per instance with the API message.

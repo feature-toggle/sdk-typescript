@@ -81,6 +81,9 @@ export class FeatureToggle {
 
     if (options.initialFeatures !== undefined) {
       this.store.update(options.initialFeatures, options.initialEtag ?? null);
+      // Seeding notifies like any other cache replace. No listener can be
+      // registered this early, but the invariant keeps future seed paths safe.
+      this.notifyListeners();
     }
   }
 

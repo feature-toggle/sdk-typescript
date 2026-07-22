@@ -171,6 +171,79 @@ describe("FeatureToggle", () => {
     ]);
   });
 
+  test("304 does not notify subscribers", async () => {
+    let calls = 0;
+    const fetchFn = createDefaultMockFetch(() => {
+      calls += 1;
+      if (calls === 1) {
+        return jsonResponse(
+          { features: [feature({ key: "alpha" })] },
+          { headers: { ETag: '"1"' } },
+        );
+      }
+      return new Response(null, {
+        status: 304,
+        headers: { ETag: '"1"' },
+      });
+    });
+
+    const ft = new FeatureToggle({
+      apiKey: "ft_test_key",
+      fetch: fetchFn,
+      stream: "off",
+    });
+
+    await ft.init();
+
+    let notifications = 0;
+    ft.subscribe(() => {
+      notifications += 1;
+    });
+
+    await ft.refresh();
+
+    expect(notifications).toBe(0);
+    ft.close();
+  });
+
+  test("401 cache clear notifies subscribers once", async () => {
+    let calls = 0;
+    const fetchFn = createDefaultMockFetch(() => {
+      calls += 1;
+      if (calls === 1) {
+        return jsonResponse({ features: [feature({ key: "alpha" })] });
+      }
+      return new Response(null, { status: 401 });
+    });
+
+    const warn = mock(() => {});
+    const original = console.warn;
+    console.warn = warn;
+
+    const ft = new FeatureToggle({
+      apiKey: "ft_test_key",
+      fetch: fetchFn,
+      stream: "off",
+    });
+
+    try {
+      await ft.init();
+
+      let notifications = 0;
+      ft.subscribe(() => {
+        notifications += 1;
+      });
+
+      await ft.refresh();
+
+      expect(ft.isEnabled("alpha")).toBe(false);
+      expect(notifications).toBe(1);
+    } finally {
+      console.warn = original;
+      ft.close();
+    }
+  });
+
   test("initialFeatures seeds cache before init", async () => {
     const fetchFn = createDefaultMockFetch(() =>
       jsonResponse({ features: [feature({ key: "live" })] }),

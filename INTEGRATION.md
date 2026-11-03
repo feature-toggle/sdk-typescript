@@ -119,9 +119,14 @@ export async function handleRequest() {
 
 ### API route / middleware gate
 
-Gate redirects, JSON responses, and authorization on the server. Client `isEnabled()` is not authorization ([Security](https://featuretoggle.com/docs/security)).
+Authorize protected routes with your own session and permission checks. A server-side feature flag controls availability, not who may access the route; client `isEnabled()` is UX only ([Security](https://featuretoggle.com/docs/security)).
 
 ```typescript
+// authorizeRequest is your app's own identity and permission check.
+if (!(await authorizeRequest(request))) {
+  return new Response("Forbidden", { status: 403 });
+}
+
 const ft = await getServerFt();
 await ft.refresh();
 if (!ft.isEnabled("api-v2")) {

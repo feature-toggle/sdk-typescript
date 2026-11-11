@@ -19,7 +19,7 @@ The core SDK for the FeatureToggle read-only Feature API. This repo is **public*
 - **On `403`:** warn once.
 - **Deprecated keys:** warn once per key per instance.
 - **Don't change behaviour silently.** Update `README.md` (API) and `INTEGRATION.md` (Cookbook) in the same change.
-- **Browser guidance:** recommend `ft_test_` keys in the browser, and say that `isEnabled()` is not authorization.
+- **Browser guidance:** keys are read-only and work in the browser; say that `isEnabled()` is not authorization.
 
 ## Verify and release
 

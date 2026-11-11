@@ -232,8 +232,7 @@ describe("fetchFeatures", () => {
       () =>
         new Response(
           JSON.stringify({
-            error:
-              "Test keys are valid on localhost only. Use a live key for deployed apps.",
+            error: "Organization unavailable",
           }),
           { status: 403, headers: { "Content-Type": "application/json" } },
         ),
@@ -243,7 +242,7 @@ describe("fetchFeatures", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.status).toBe(403);
-      expect(result.errorMessage).toContain("localhost");
+      expect(result.errorMessage).toBe("Organization unavailable");
     }
   });
 
@@ -275,12 +274,12 @@ describe("loadFeatures", () => {
     ).rejects.toThrow("network error");
   });
 
-  test("warns once on 403 scope error", async () => {
+  test("warns once on 403", async () => {
     let calls = 0;
     const fetchFn = createMockFetch(() => {
       calls += 1;
       return new Response(
-        JSON.stringify({ error: "Live keys require a paid plan." }),
+        JSON.stringify({ error: "Organization unavailable" }),
         { status: 403, headers: { "Content-Type": "application/json" } },
       );
     });
@@ -312,7 +311,7 @@ describe("loadFeatures", () => {
 
       expect(calls).toBe(2);
       expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn.mock.calls[0]?.[0]).toContain("paid plan");
+      expect(warn.mock.calls[0]?.[0]).toBe("Organization unavailable");
     } finally {
       console.warn = original;
     }

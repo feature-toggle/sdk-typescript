@@ -21,7 +21,8 @@ const MAX_TIMEOUT_MS = 2_147_483_647;
 export function parseRetryAfterMs(value: string | null): number | null {
   if (value === null || value.trim() === "") return null;
   const seconds = Number(value);
-  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : null;
+  // 0 would reconnect at once and loop on 429s; fall back to backoff instead.
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
 }
 
 export class FeatureStreamClient {
@@ -33,6 +34,7 @@ export class FeatureStreamClient {
   private reconnectDelayMs = INITIAL_RECONNECT_MS;
   private closed = false;
   private running = false;
+  private warnedRateLimited = false;
 
   constructor(
     fetchFn: FetchFn,
@@ -116,6 +118,12 @@ export class FeatureStreamClient {
         // Sync allowance used up: wait until it resets instead of retrying.
         if (response.status === 429) {
           retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
+          if (!this.warnedRateLimited) {
+            this.warnedRateLimited = true;
+            console.warn(
+              "FeatureToggle: sync allowance used up; live updates paused until it resets",
+            );
+          }
         }
         return; // `finally` reconnects.
       }

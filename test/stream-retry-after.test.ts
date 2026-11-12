@@ -7,6 +7,8 @@ import {
 const realSetTimeout = globalThis.setTimeout;
 const realClearTimeout = globalThis.clearTimeout;
 const realNow = Date.now;
+const realWarn = console.warn;
+let warnings: unknown[][] = [];
 
 type Timer = { fn: () => void; ms: number };
 
@@ -19,6 +21,10 @@ function fakeClock() {
   }) as typeof setTimeout;
   globalThis.clearTimeout = (() => {}) as typeof clearTimeout;
   Date.now = () => now;
+  warnings = [];
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args);
+  };
   return {
     timers,
     advanceTo(ms: number) {
@@ -52,6 +58,7 @@ describe("stream 429", () => {
     globalThis.setTimeout = realSetTimeout;
     globalThis.clearTimeout = realClearTimeout;
     Date.now = realNow;
+    console.warn = realWarn;
   });
 
   test("waits for Retry-After before reconnecting", async () => {
@@ -73,6 +80,8 @@ describe("stream 429", () => {
     clock.timers.at(-1)?.fn();
     await flush();
     expect(calls()).toBe(2);
+    // The second 429 doesn't warn again.
+    expect(warnings).toHaveLength(1);
     client.close();
   });
 
@@ -110,7 +119,7 @@ describe("stream 429", () => {
 describe("parseRetryAfterMs", () => {
   test("parses seconds and rejects junk", () => {
     expect(parseRetryAfterMs("120")).toBe(120_000);
-    expect(parseRetryAfterMs("0")).toBe(0);
+    expect(parseRetryAfterMs("0")).toBeNull();
     expect(parseRetryAfterMs(null)).toBeNull();
     expect(parseRetryAfterMs("")).toBeNull();
     expect(parseRetryAfterMs("-1")).toBeNull();

@@ -75,7 +75,7 @@ await ft.init();
 ft.close();
 ```
 
-`stream` values and poll behavior: [Caching and syncs](https://featuretoggle.com/docs/caching).
+`stream` values and poll behavior: [Caching and syncs](https://featuretoggle.com/docs/caching). Each stream open uses one sync (about 30 an hour per open tab); use `stream: "off"` with a longer `pollInterval` to use fewer.
 
 ---
 

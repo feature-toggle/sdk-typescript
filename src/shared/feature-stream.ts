@@ -14,6 +14,16 @@ export type FeatureStreamCallbacks = {
 
 const INITIAL_RECONNECT_MS = 1_000;
 const MAX_RECONNECT_MS = 30_000;
+/** setTimeout fires immediately above this, so longer waits are re-armed. */
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
+/** `Retry-After` in seconds, as the Feature API sends it; null if invalid. */
+export function parseRetryAfterMs(value: string | null): number | null {
+  if (value === null || value.trim() === "") return null;
+  const seconds = Number(value);
+  // 0 would reconnect at once and loop on 429s; fall back to backoff instead.
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
+}
 
 export class FeatureStreamClient {
   private readonly fetchFn: FetchFn;
@@ -24,6 +34,7 @@ export class FeatureStreamClient {
   private reconnectDelayMs = INITIAL_RECONNECT_MS;
   private closed = false;
   private running = false;
+  private warnedRateLimited = false;
 
   constructor(
     fetchFn: FetchFn,
@@ -56,16 +67,33 @@ export class FeatureStreamClient {
     }
   }
 
-  private scheduleReconnect(): void {
+  /** Reconnects after `retryAfterMs` when given, otherwise with backoff. */
+  private scheduleReconnect(retryAfterMs: number | null = null): void {
     if (this.closed || !this.running) return;
     this.clearReconnect();
-    this.reconnectTimeout = setTimeout(() => {
-      this.reconnectTimeout = null;
-      void this.connectLoop();
-    }, this.reconnectDelayMs);
+    if (retryAfterMs !== null) {
+      this.reconnectAt(Date.now() + retryAfterMs);
+      return;
+    }
+    this.reconnectAt(Date.now() + this.reconnectDelayMs);
     this.reconnectDelayMs = Math.min(
       this.reconnectDelayMs * 2,
       MAX_RECONNECT_MS,
+    );
+  }
+
+  private reconnectAt(at: number): void {
+    const remaining = Math.max(0, at - Date.now());
+    this.reconnectTimeout = setTimeout(
+      () => {
+        this.reconnectTimeout = null;
+        if (Date.now() < at) {
+          this.reconnectAt(at);
+          return;
+        }
+        void this.connectLoop();
+      },
+      Math.min(remaining, MAX_TIMEOUT_MS),
     );
   }
 
@@ -75,6 +103,7 @@ export class FeatureStreamClient {
     this.abortController?.abort();
     const abortController = new AbortController();
     this.abortController = abortController;
+    let retryAfterMs: number | null = null;
 
     try {
       const response = await this.fetchFn(
@@ -86,9 +115,17 @@ export class FeatureStreamClient {
       );
 
       if (!response.ok || !response.body) {
-        this.callbacks.onDisconnect?.();
-        this.scheduleReconnect();
-        return;
+        // Sync allowance used up: wait until it resets instead of retrying.
+        if (response.status === 429) {
+          retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
+          if (!this.warnedRateLimited) {
+            this.warnedRateLimited = true;
+            console.warn(
+              "FeatureToggle: sync allowance used up; live updates paused until it resets",
+            );
+          }
+        }
+        return; // `finally` reconnects.
       }
 
       this.reconnectDelayMs = INITIAL_RECONNECT_MS;
@@ -123,7 +160,7 @@ export class FeatureStreamClient {
     } finally {
       if (!this.closed && this.running && !abortController.signal.aborted) {
         this.callbacks.onDisconnect?.();
-        this.scheduleReconnect();
+        this.scheduleReconnect(retryAfterMs);
       }
     }
   }

@@ -108,6 +108,8 @@ Options: `apiKey` (or `FT_API_KEY`), `stream` (default `"auto"`), `pollInterval`
 | `subscribe(listener)` | Callback when cache updates; returns unsubscribe |
 | `close()` | Close stream and stop transport |
 
+Each time the stream opens or reopens, it uses one sync. If the API answers `429` (sync allowance used up), the stream waits for `Retry-After` before reconnecting.
+
 `stream` / `pollInterval` semantics: [Caching and syncs](https://featuretoggle.com/docs/caching). Shared env vars: [SDKs](https://featuretoggle.com/docs/sdks).
 
 ### `FeatureToggleServer`

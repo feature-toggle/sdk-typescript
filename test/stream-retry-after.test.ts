@@ -70,13 +70,6 @@ describe("stream 429", () => {
     expect(calls()).toBe(1);
     expect(clock.timers.at(-1)?.ms).toBe(120_000);
 
-    // Fired early (e.g. a throttled timer): re-arms instead of connecting.
-    clock.advanceTo(clock.start + 119_000);
-    clock.timers.at(-1)?.fn();
-    await flush();
-    expect(calls()).toBe(1);
-
-    clock.advanceTo(clock.start + 120_000);
     clock.timers.at(-1)?.fn();
     await flush();
     expect(calls()).toBe(2);
@@ -85,23 +78,35 @@ describe("stream 429", () => {
     client.close();
   });
 
-  test("a 30-day Retry-After doesn't overflow setTimeout", async () => {
+  test("caps Retry-After at an hour, so an upgrade resumes live updates", async () => {
+    for (const retryAfter of ["2592000", "9".repeat(309)]) {
+      const clock = fakeClock();
+      const { client, calls } = rateLimitedClient(retryAfter);
+
+      client.start();
+      await flush();
+      expect(clock.timers.at(-1)?.ms).toBe(3_600_000);
+
+      clock.timers.at(-1)?.fn();
+      await flush();
+      expect(calls()).toBe(2);
+      client.close();
+    }
+  });
+
+  test("a short Retry-After can't undercut the backoff", async () => {
     const clock = fakeClock();
-    const { client, calls } = rateLimitedClient("2592000");
+    const { client } = rateLimitedClient("1");
 
     client.start();
     await flush();
-    expect(clock.timers.at(-1)?.ms).toBe(2_147_483_647);
-
-    clock.advanceTo(clock.start + 25 * 86_400_000);
-    clock.timers.at(-1)?.fn();
-    await flush();
-    expect(calls()).toBe(1);
-
-    clock.advanceTo(clock.start + 30 * 86_400_000);
-    clock.timers.at(-1)?.fn();
-    await flush();
-    expect(calls()).toBe(2);
+    for (let i = 0; i < 3; i++) {
+      clock.timers.at(-1)?.fn();
+      await flush();
+    }
+    expect(clock.timers.map((timer) => timer.ms)).toEqual([
+      1_000, 2_000, 4_000, 8_000,
+    ]);
     client.close();
   });
 

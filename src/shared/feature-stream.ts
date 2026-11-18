@@ -14,8 +14,8 @@ export type FeatureStreamCallbacks = {
 
 const INITIAL_RECONNECT_MS = 1_000;
 const MAX_RECONNECT_MS = 30_000;
-/** setTimeout fires immediately above this, so longer waits are re-armed. */
-const MAX_TIMEOUT_MS = 2_147_483_647;
+/** Longest wait a `Retry-After` can impose, so an upgrade resumes live updates within the hour. */
+const MAX_RETRY_AFTER_MS = 3_600_000;
 
 /** `Retry-After` in whole seconds, as the Feature API sends it; null if invalid. */
 export function parseRetryAfterMs(value: string | null): number | null {
@@ -68,33 +68,21 @@ export class FeatureStreamClient {
     }
   }
 
-  /** Reconnects after `retryAfterMs` when given, otherwise with backoff. */
+  /** Reconnects with backoff; `retryAfterMs` can lengthen the wait, up to an hour. */
   private scheduleReconnect(retryAfterMs: number | null = null): void {
     if (this.closed || !this.running) return;
     this.clearReconnect();
-    if (retryAfterMs !== null) {
-      this.reconnectAt(Date.now() + retryAfterMs);
-      return;
-    }
-    this.reconnectAt(Date.now() + this.reconnectDelayMs);
+    const delayMs = Math.max(
+      this.reconnectDelayMs,
+      Math.min(retryAfterMs ?? 0, MAX_RETRY_AFTER_MS),
+    );
+    this.reconnectTimeout = setTimeout(() => {
+      this.reconnectTimeout = null;
+      void this.connectLoop();
+    }, delayMs);
     this.reconnectDelayMs = Math.min(
       this.reconnectDelayMs * 2,
       MAX_RECONNECT_MS,
-    );
-  }
-
-  private reconnectAt(at: number): void {
-    const remaining = Math.max(0, at - Date.now());
-    this.reconnectTimeout = setTimeout(
-      () => {
-        this.reconnectTimeout = null;
-        if (Date.now() < at) {
-          this.reconnectAt(at);
-          return;
-        }
-        void this.connectLoop();
-      },
-      Math.min(remaining, MAX_TIMEOUT_MS),
     );
   }
 

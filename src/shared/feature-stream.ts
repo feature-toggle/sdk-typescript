@@ -117,7 +117,6 @@ export class FeatureStreamClient {
         return; // `finally` reconnects.
       }
 
-      this.reconnectDelayMs = INITIAL_RECONNECT_MS;
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -132,8 +131,11 @@ export class FeatureStreamClient {
 
         for (const event of parsed.events) {
           this.callbacks.onEvent?.(event);
-          // Live again, so a later 429 means a new allowance ran out: warn.
-          if (event.event === "connected") this.warnedRateLimited = false;
+          // Live again: reset the backoff, and warn if a new allowance runs out.
+          if (event.event === "connected") {
+            this.reconnectDelayMs = INITIAL_RECONNECT_MS;
+            this.warnedRateLimited = false;
+          }
           if (
             event.event === "features-changed" ||
             event.event === "connected"

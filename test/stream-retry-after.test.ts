@@ -110,6 +110,28 @@ describe("stream 429", () => {
     client.close();
   });
 
+  test("a 200 that closes before `connected` doesn't reset the backoff", async () => {
+    const clock = fakeClock();
+    const fetchFn = (() =>
+      Promise.resolve(
+        new Response("", { status: 200 }),
+      )) as unknown as typeof fetch;
+    const client = new FeatureStreamClient(fetchFn, "ft_live_key", {
+      onFeaturesChanged: () => {},
+    });
+
+    client.start();
+    await flush();
+    for (let i = 0; i < 2; i++) {
+      clock.timers.at(-1)?.fn();
+      await flush();
+    }
+    expect(clock.timers.map((timer) => timer.ms)).toEqual([
+      1_000, 2_000, 4_000,
+    ]);
+    client.close();
+  });
+
   const limited = () =>
     new Response("{}", { status: 429, headers: { "Retry-After": "60" } });
 

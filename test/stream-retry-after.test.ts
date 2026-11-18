@@ -125,4 +125,14 @@ describe("parseRetryAfterMs", () => {
     expect(parseRetryAfterMs("-1")).toBeNull();
     expect(parseRetryAfterMs("soon")).toBeNull();
   });
+
+  test("rejects fractional seconds so they can't loop sub-second", () => {
+    expect(parseRetryAfterMs("0.5")).toBeNull();
+    expect(parseRetryAfterMs("1.5")).toBeNull();
+    expect(parseRetryAfterMs("1.0000000000000001")).toBeNull();
+    expect(parseRetryAfterMs("1e-3")).toBeNull();
+    expect(parseRetryAfterMs("1e3")).toBeNull();
+    expect(parseRetryAfterMs("0x10")).toBeNull();
+    expect(parseRetryAfterMs(" 120 ")).toBe(120_000);
+  });
 });

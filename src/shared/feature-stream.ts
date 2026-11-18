@@ -17,12 +17,13 @@ const MAX_RECONNECT_MS = 30_000;
 /** setTimeout fires immediately above this, so longer waits are re-armed. */
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
-/** `Retry-After` in seconds, as the Feature API sends it; null if invalid. */
+/** `Retry-After` in whole seconds, as the Feature API sends it; null if invalid. */
 export function parseRetryAfterMs(value: string | null): number | null {
-  if (value === null || value.trim() === "") return null;
+  // HTTP's delay-seconds is decimal digits only; anything else gets backoff.
+  if (value === null || !/^\d+$/.test(value.trim())) return null;
   const seconds = Number(value);
   // 0 would reconnect at once and loop on 429s; fall back to backoff instead.
-  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
+  return seconds > 0 ? seconds * 1000 : null;
 }
 
 export class FeatureStreamClient {

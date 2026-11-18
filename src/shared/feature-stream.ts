@@ -16,6 +16,8 @@ const INITIAL_RECONNECT_MS = 1_000;
 const MAX_RECONNECT_MS = 30_000;
 /** Longest wait a `Retry-After` can impose, so an upgrade resumes live updates within the hour. */
 const MAX_RETRY_AFTER_MS = 3_600_000;
+/** Pings (~16 s apart) a stream must last before the backoff resets: ~1 min. */
+const PINGS_BEFORE_RESET = 4;
 
 /** `Retry-After` in whole seconds, as the Feature API sends it; null if invalid. */
 export function parseRetryAfterMs(value: string | null): number | null {
@@ -93,6 +95,7 @@ export class FeatureStreamClient {
     const abortController = new AbortController();
     this.abortController = abortController;
     let retryAfterMs: number | null = null;
+    let pings = 0;
 
     try {
       const response = await this.fetchFn(
@@ -133,10 +136,11 @@ export class FeatureStreamClient {
           this.callbacks.onEvent?.(event);
           // Live again: warn if a new allowance runs out.
           if (event.event === "connected") this.warnedRateLimited = false;
-          // Held open until the first ping (~15 s): reset the backoff. A stream
-          // that closes sooner keeps backing off, since each open costs a sync.
-          if (event.event === "ping")
+          // Held open ~1 min: reset the backoff. A stream cut sooner keeps
+          // backing off, since each open costs a sync.
+          if (event.event === "ping" && ++pings === PINGS_BEFORE_RESET) {
             this.reconnectDelayMs = INITIAL_RECONNECT_MS;
+          }
           if (
             event.event === "features-changed" ||
             event.event === "connected"

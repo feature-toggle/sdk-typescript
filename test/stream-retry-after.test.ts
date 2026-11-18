@@ -44,6 +44,36 @@ function rateLimitedClient(retryAfter: string) {
   return { client, calls: () => calls };
 }
 
+const CONNECTED = "event: connected\ndata: {}\n\n";
+const PING = "event: ping\ndata: {}\n\n";
+/** Held open for 4 pings (~1 min), long enough to reset the backoff. */
+const HEALTHY_STREAM = CONNECTED + PING.repeat(4);
+
+/** A client whose every stream answers 200 with `body`, then closes. */
+function repeatingClient(body: string) {
+  const fetchFn = (() =>
+    Promise.resolve(
+      new Response(body, { status: 200 }),
+    )) as unknown as typeof fetch;
+  return new FeatureStreamClient(fetchFn, "ft_live_key", {
+    onFeaturesChanged: () => {},
+  });
+}
+
+/** Starts the client, then fires each retry `reconnects` times. */
+async function runReconnects(
+  clock: ReturnType<typeof fakeClock>,
+  client: FeatureStreamClient,
+  reconnects: number,
+) {
+  client.start();
+  await flush();
+  for (let i = 0; i < reconnects; i++) {
+    clock.timers.at(-1)?.fn();
+    await flush();
+  }
+}
+
 describe("stream 429", () => {
   afterEach(() => {
     globalThis.setTimeout = realSetTimeout;
@@ -157,12 +187,9 @@ describe("stream 429", () => {
     const { client, calls } = sequenceClient([
       limited,
       () =>
-        new Response(
-          "event: connected\ndata: {}\n\nevent: ping\ndata: {}\n\n",
-          {
-            status: 200,
-          },
-        ),
+        new Response(HEALTHY_STREAM, {
+          status: 200,
+        }),
     ]);
 
     client.start();
@@ -173,7 +200,7 @@ describe("stream 429", () => {
     await fireNext(clock, 0, 60_000);
     expect(calls()).toBe(2);
 
-    // Runs out again: the user hears about it again. The `ping` reset the
+    // Runs out again: the user hears about it again. The pings reset the
     // backoff, so the retry comes after 1 s (2 s without the reset).
     await fireNext(clock, 1, 1_000);
     expect(calls()).toBe(3);
@@ -232,6 +259,26 @@ describe("stream 429", () => {
     }
     expect(clock.timers.map((timer) => timer.ms)).toEqual([
       1_000, 2_000, 4_000,
+    ]);
+    client.close();
+  });
+
+  test("a stream cut before ~1 min of pings keeps backing off", async () => {
+    const clock = fakeClock();
+    const client = repeatingClient(CONNECTED + PING.repeat(3));
+    await runReconnects(clock, client, 2);
+    expect(clock.timers.map((timer) => timer.ms)).toEqual([
+      1_000, 2_000, 4_000,
+    ]);
+    client.close();
+  });
+
+  test("a stream held open for ~1 min of pings resets the backoff", async () => {
+    const clock = fakeClock();
+    const client = repeatingClient(HEALTHY_STREAM);
+    await runReconnects(clock, client, 2);
+    expect(clock.timers.map((timer) => timer.ms)).toEqual([
+      1_000, 1_000, 1_000,
     ]);
     client.close();
   });

@@ -131,11 +131,12 @@ export class FeatureStreamClient {
 
         for (const event of parsed.events) {
           this.callbacks.onEvent?.(event);
-          // Live again: reset the backoff, and warn if a new allowance runs out.
-          if (event.event === "connected") {
+          // Live again: warn if a new allowance runs out.
+          if (event.event === "connected") this.warnedRateLimited = false;
+          // Held open until the first ping (~15 s): reset the backoff. A stream
+          // that closes sooner keeps backing off, since each open costs a sync.
+          if (event.event === "ping")
             this.reconnectDelayMs = INITIAL_RECONNECT_MS;
-            this.warnedRateLimited = false;
-          }
           if (
             event.event === "features-changed" ||
             event.event === "connected"

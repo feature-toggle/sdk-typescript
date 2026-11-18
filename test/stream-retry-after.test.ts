@@ -156,7 +156,13 @@ describe("stream 429", () => {
     const clock = fakeClock();
     const { client, calls } = sequenceClient([
       limited,
-      () => new Response("event: connected\ndata: {}\n\n", { status: 200 }),
+      () =>
+        new Response(
+          "event: connected\ndata: {}\n\nevent: ping\ndata: {}\n\n",
+          {
+            status: 200,
+          },
+        ),
     ]);
 
     client.start();
@@ -167,10 +173,26 @@ describe("stream 429", () => {
     await fireNext(clock, 0, 60_000);
     expect(calls()).toBe(2);
 
-    // Runs out again: the user hears about it again. `connected` reset the
+    // Runs out again: the user hears about it again. The `ping` reset the
     // backoff, so the retry comes after 1 s (2 s without the reset).
     await fireNext(clock, 1, 1_000);
     expect(calls()).toBe(3);
+    expect(allowanceWarnings()).toHaveLength(2);
+    client.close();
+  });
+
+  test("`connected` alone re-arms the warning but not the backoff reset", async () => {
+    const clock = fakeClock();
+    const { client } = sequenceClient([
+      limited,
+      () => new Response("event: connected\ndata: {}\n\n", { status: 200 }),
+    ]);
+
+    client.start();
+    await flush();
+    await fireNext(clock, 0, 60_000);
+    // No `ping`, so the backoff wasn't reset: 2 s, not 1 s.
+    await fireNext(clock, 1, 2_000);
     expect(allowanceWarnings()).toHaveLength(2);
     client.close();
   });
@@ -185,10 +207,32 @@ describe("stream 429", () => {
     client.start();
     await flush();
     await fireNext(clock, 0, 60_000);
-    // No `connected`, so the backoff kept growing.
+    // No `ping`, so the backoff kept growing.
     await fireNext(clock, 1, 2_000);
     expect(calls()).toBe(3);
     expect(allowanceWarnings()).toHaveLength(1);
+    client.close();
+  });
+
+  test("a stream that closes after `connected` but before a `ping` keeps backing off", async () => {
+    const clock = fakeClock();
+    const fetchFn = (() =>
+      Promise.resolve(
+        new Response("event: connected\ndata: {}\n\n", { status: 200 }),
+      )) as unknown as typeof fetch;
+    const client = new FeatureStreamClient(fetchFn, "ft_live_key", {
+      onFeaturesChanged: () => {},
+    });
+
+    client.start();
+    await flush();
+    for (let i = 0; i < 2; i++) {
+      clock.timers.at(-1)?.fn();
+      await flush();
+    }
+    expect(clock.timers.map((timer) => timer.ms)).toEqual([
+      1_000, 2_000, 4_000,
+    ]);
     client.close();
   });
 

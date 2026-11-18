@@ -144,6 +144,8 @@ export class FeatureStreamClient {
 
         for (const event of parsed.events) {
           this.callbacks.onEvent?.(event);
+          // Live again, so a later 429 means a new allowance ran out: warn.
+          if (event.event === "connected") this.warnedRateLimited = false;
           if (
             event.event === "features-changed" ||
             event.event === "connected"

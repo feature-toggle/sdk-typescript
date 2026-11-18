@@ -105,6 +105,74 @@ describe("stream 429", () => {
     client.close();
   });
 
+  const limited = () =>
+    new Response("{}", { status: 429, headers: { "Retry-After": "60" } });
+
+  function sequenceClient(responses: (() => Response)[]) {
+    let calls = 0;
+    const fetchFn = (() =>
+      Promise.resolve(
+        (responses[calls++] ?? limited)(),
+      )) as unknown as typeof fetch;
+    const client = new FeatureStreamClient(fetchFn, "ft_live_key", {
+      onFeaturesChanged: () => {},
+    });
+    return { client, calls: () => calls };
+  }
+
+  const allowanceWarnings = () =>
+    warnings.filter((args) => String(args[0]).includes("sync allowance"));
+
+  /** Fires the newest timer, asserting it is new, at its deadline. */
+  async function fireNext(
+    clock: ReturnType<typeof fakeClock>,
+    timersBefore: number,
+    at: number,
+  ) {
+    expect(clock.timers.length).toBe(timersBefore + 1);
+    clock.advanceTo(at);
+    clock.timers.at(-1)?.fn();
+    await flush();
+  }
+
+  test("warns again if the allowance runs out after a successful reconnect", async () => {
+    const clock = fakeClock();
+    const { client, calls } = sequenceClient([
+      limited,
+      () => new Response("event: connected\ndata: {}\n\n", { status: 200 }),
+    ]);
+
+    client.start();
+    await flush();
+    expect(allowanceWarnings()).toHaveLength(1);
+
+    // Allowance reset: the stream connects, then ends.
+    await fireNext(clock, 0, clock.start + 60_000);
+    expect(calls()).toBe(2);
+
+    // Runs out again: the user hears about it again.
+    await fireNext(clock, 1, clock.start + 61_000);
+    expect(calls()).toBe(3);
+    expect(allowanceWarnings()).toHaveLength(2);
+    client.close();
+  });
+
+  test("a 200 that closes before `connected` doesn't re-arm the warning", async () => {
+    const clock = fakeClock();
+    const { client, calls } = sequenceClient([
+      limited,
+      () => new Response("", { status: 200 }),
+    ]);
+
+    client.start();
+    await flush();
+    await fireNext(clock, 0, clock.start + 60_000);
+    await fireNext(clock, 1, clock.start + 61_000);
+    expect(calls()).toBe(3);
+    expect(allowanceWarnings()).toHaveLength(1);
+    client.close();
+  });
+
   test("without a valid Retry-After it falls back to backoff", async () => {
     const clock = fakeClock();
     const { client } = rateLimitedClient("soon");

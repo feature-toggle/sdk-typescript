@@ -6,32 +6,23 @@ import {
 
 const realSetTimeout = globalThis.setTimeout;
 const realClearTimeout = globalThis.clearTimeout;
-const realNow = Date.now;
 const realWarn = console.warn;
 let warnings: unknown[][] = [];
 
 type Timer = { fn: () => void; ms: number };
 
 function fakeClock() {
-  let now = 1_000_000;
   const timers: Timer[] = [];
   globalThis.setTimeout = ((fn: () => void, ms: number) => {
     timers.push({ fn, ms });
     return timers.length as unknown as ReturnType<typeof setTimeout>;
   }) as typeof setTimeout;
   globalThis.clearTimeout = (() => {}) as typeof clearTimeout;
-  Date.now = () => now;
   warnings = [];
   console.warn = (...args: unknown[]) => {
     warnings.push(args);
   };
-  return {
-    timers,
-    advanceTo(ms: number) {
-      now = ms;
-    },
-    start: now,
-  };
+  return { timers };
 }
 
 const flush = () => new Promise((resolve) => realSetTimeout(resolve, 0));
@@ -57,7 +48,6 @@ describe("stream 429", () => {
   afterEach(() => {
     globalThis.setTimeout = realSetTimeout;
     globalThis.clearTimeout = realClearTimeout;
-    Date.now = realNow;
     console.warn = realWarn;
   });
 
@@ -150,14 +140,14 @@ describe("stream 429", () => {
   const allowanceWarnings = () =>
     warnings.filter((args) => String(args[0]).includes("sync allowance"));
 
-  /** Fires the newest timer, asserting it is new, at its deadline. */
+  /** Fires the newest timer, asserting it is new and has the expected delay. */
   async function fireNext(
     clock: ReturnType<typeof fakeClock>,
     timersBefore: number,
-    at: number,
+    ms: number,
   ) {
     expect(clock.timers.length).toBe(timersBefore + 1);
-    clock.advanceTo(at);
+    expect(clock.timers.at(-1)?.ms).toBe(ms);
     clock.timers.at(-1)?.fn();
     await flush();
   }
@@ -174,11 +164,12 @@ describe("stream 429", () => {
     expect(allowanceWarnings()).toHaveLength(1);
 
     // Allowance reset: the stream connects, then ends.
-    await fireNext(clock, 0, clock.start + 60_000);
+    await fireNext(clock, 0, 60_000);
     expect(calls()).toBe(2);
 
-    // Runs out again: the user hears about it again.
-    await fireNext(clock, 1, clock.start + 61_000);
+    // Runs out again: the user hears about it again. `connected` reset the
+    // backoff, so the retry comes after 1 s (2 s without the reset).
+    await fireNext(clock, 1, 1_000);
     expect(calls()).toBe(3);
     expect(allowanceWarnings()).toHaveLength(2);
     client.close();
@@ -193,8 +184,9 @@ describe("stream 429", () => {
 
     client.start();
     await flush();
-    await fireNext(clock, 0, clock.start + 60_000);
-    await fireNext(clock, 1, clock.start + 61_000);
+    await fireNext(clock, 0, 60_000);
+    // No `connected`, so the backoff kept growing.
+    await fireNext(clock, 1, 2_000);
     expect(calls()).toBe(3);
     expect(allowanceWarnings()).toHaveLength(1);
     client.close();

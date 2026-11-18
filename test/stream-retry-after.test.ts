@@ -74,6 +74,25 @@ async function runReconnects(
   }
 }
 
+/** A stream that sends `connected`, then fails mid-read. */
+function readErrorAfterConnected() {
+  let sent = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (sent) {
+        controller.error(new Error("connection reset"));
+        return;
+      }
+      sent = true;
+      controller.enqueue(new TextEncoder().encode(CONNECTED));
+    },
+  });
+  return new Response(body, { status: 200 });
+}
+
+const earlyCloseWarnings = () =>
+  warnings.filter((args) => String(args[0]).includes("closing early"));
+
 describe("stream 429", () => {
   afterEach(() => {
     globalThis.setTimeout = realSetTimeout;
@@ -149,6 +168,8 @@ describe("stream 429", () => {
     expect(clock.timers.map((timer) => timer.ms)).toEqual([
       1_000, 2_000, 4_000,
     ]);
+    // Never reached `connected`, so it isn't an early close.
+    expect(earlyCloseWarnings()).toHaveLength(0);
     client.close();
   });
 
@@ -280,6 +301,33 @@ describe("stream 429", () => {
     expect(clock.timers.map((timer) => timer.ms)).toEqual([
       1_000, 1_000, 1_000,
     ]);
+    expect(earlyCloseWarnings()).toHaveLength(0);
+    client.close();
+  });
+
+  test("warns once after three early closes in a row; a healthy stream clears the count", async () => {
+    const clock = fakeClock();
+    const ok = (body: string) => () => new Response(body, { status: 200 });
+    const { client } = sequenceClient([
+      ok(CONNECTED),
+      ok(CONNECTED),
+      ok(HEALTHY_STREAM),
+      ok(CONNECTED),
+      // A read error after `connected` counts like a clean close.
+      readErrorAfterConnected,
+      ok(CONNECTED),
+      ok(CONNECTED),
+    ]);
+    const closes = [0, 0, 0, 0, 0, 1, 1];
+
+    client.start();
+    await flush();
+    expect(earlyCloseWarnings()).toHaveLength(closes[0] as number);
+    for (const expected of closes.slice(1)) {
+      clock.timers.at(-1)?.fn();
+      await flush();
+      expect(earlyCloseWarnings()).toHaveLength(expected);
+    }
     client.close();
   });
 

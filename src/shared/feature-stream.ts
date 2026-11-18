@@ -18,6 +18,8 @@ const MAX_RECONNECT_MS = 30_000;
 const MAX_RETRY_AFTER_MS = 3_600_000;
 /** Pings (~16 s apart) a stream must last before the backoff resets: ~1 min. */
 const PINGS_BEFORE_RESET = 4;
+/** Early closes in a row before warning that something keeps cutting the stream. */
+const EARLY_CLOSES_BEFORE_WARNING = 3;
 
 /** `Retry-After` in whole seconds, as the Feature API sends it; null if invalid. */
 export function parseRetryAfterMs(value: string | null): number | null {
@@ -38,6 +40,7 @@ export class FeatureStreamClient {
   private closed = false;
   private running = false;
   private warnedRateLimited = false;
+  private earlyCloses = 0;
 
   constructor(
     fetchFn: FetchFn,
@@ -95,6 +98,7 @@ export class FeatureStreamClient {
     const abortController = new AbortController();
     this.abortController = abortController;
     let retryAfterMs: number | null = null;
+    let connected = false;
     let pings = 0;
 
     try {
@@ -134,12 +138,16 @@ export class FeatureStreamClient {
 
         for (const event of parsed.events) {
           this.callbacks.onEvent?.(event);
-          // Live again: warn if a new allowance runs out.
-          if (event.event === "connected") this.warnedRateLimited = false;
+          if (event.event === "connected") {
+            connected = true;
+            // Live again: warn if a new allowance runs out.
+            this.warnedRateLimited = false;
+          }
           // Held open ~1 min: reset the backoff. A stream cut sooner keeps
           // backing off, since each open costs a sync.
           if (event.event === "ping" && ++pings === PINGS_BEFORE_RESET) {
             this.reconnectDelayMs = INITIAL_RECONNECT_MS;
+            this.earlyCloses = 0;
           }
           if (
             event.event === "features-changed" ||
@@ -157,6 +165,15 @@ export class FeatureStreamClient {
       console.warn("FeatureToggle: feature stream disconnected", error);
     } finally {
       if (!this.closed && this.running && !abortController.signal.aborted) {
+        if (
+          connected &&
+          pings < PINGS_BEFORE_RESET &&
+          ++this.earlyCloses === EARLY_CLOSES_BEFORE_WARNING
+        ) {
+          console.warn(
+            "FeatureToggle: live connection keeps closing early (a proxy, a fetch timeout or a flaky network?); reconnects slowed to save syncs",
+          );
+        }
         this.callbacks.onDisconnect?.();
         this.scheduleReconnect(retryAfterMs);
       }

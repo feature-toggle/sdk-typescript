@@ -108,7 +108,7 @@ Options: `apiKey` (or `FT_API_KEY`), `stream` (default `"auto"`), `pollInterval`
 | `subscribe(listener)` | Callback when cache updates; returns unsubscribe |
 | `close()` | Close stream and stop transport |
 
-Each time the stream opens or reopens, it uses one sync. If the API answers `429` (sync allowance used up), the stream waits for `Retry-After` (whole seconds, at most an hour) before reconnecting. It never retries faster than its usual 1–30 s backoff, and logs one warning per outage. After an upgrade, it tries again within the hour.
+Each time the stream opens or reopens, it uses one sync. If the API answers `429` (sync allowance used up), the stream waits for `Retry-After` (whole seconds, at most an hour) before reconnecting. It never retries faster than its usual 1–30 s backoff. It logs a warning when the allowance runs out, and again only after the stream has reconnected. After an upgrade, it tries again within the hour.
 
 If the live connection keeps closing within about a minute (often a proxy, a `fetch` timeout or a flaky network), reconnects back off to save syncs and the SDK logs one warning saying so.
 

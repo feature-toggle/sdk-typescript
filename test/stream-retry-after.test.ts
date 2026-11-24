@@ -118,7 +118,7 @@ describe("stream 429", () => {
   });
 
   test("caps Retry-After at an hour, so an upgrade resumes live updates", async () => {
-    for (const retryAfter of ["2592000", "9".repeat(309)]) {
+    for (const retryAfter of ["2592000", "9".repeat(20)]) {
       const clock = fakeClock();
       const { client, calls } = rateLimitedClient(retryAfter);
 
@@ -221,8 +221,7 @@ describe("stream 429", () => {
     await fireNext(clock, 0, 60_000);
     expect(calls()).toBe(2);
 
-    // Runs out again: the user hears about it again. The pings reset the
-    // backoff, so the retry comes after 1 s (2 s without the reset).
+    // Runs out again: the user hears about it again.
     await fireNext(clock, 1, 1_000);
     expect(calls()).toBe(3);
     expect(allowanceWarnings()).toHaveLength(2);
@@ -231,16 +230,18 @@ describe("stream 429", () => {
 
   test("`connected` alone re-arms the warning but not the backoff reset", async () => {
     const clock = fakeClock();
-    const { client } = sequenceClient([
-      limited,
-      () => new Response("event: connected\ndata: {}\n\n", { status: 200 }),
-    ]);
+    const connectedOnly = () =>
+      new Response("event: connected\ndata: {}\n\n", { status: 200 });
+    const { client } = sequenceClient([connectedOnly, limited, connectedOnly]);
 
     client.start();
     await flush();
-    await fireNext(clock, 0, 60_000);
+    // An early close advances the backoff to 2 s; the 429's wait keeps it.
+    await fireNext(clock, 0, 1_000);
+    await fireNext(clock, 1, 60_000);
     // No `ping`, so the backoff wasn't reset: 2 s, not 1 s.
-    await fireNext(clock, 1, 2_000);
+    await fireNext(clock, 2, 2_000);
+    // `connected` re-armed the warning, so the next 429 warns again.
     expect(allowanceWarnings()).toHaveLength(2);
     client.close();
   });
@@ -255,8 +256,7 @@ describe("stream 429", () => {
     client.start();
     await flush();
     await fireNext(clock, 0, 60_000);
-    // No `ping`, so the backoff kept growing.
-    await fireNext(clock, 1, 2_000);
+    await fireNext(clock, 1, 1_000);
     expect(calls()).toBe(3);
     expect(allowanceWarnings()).toHaveLength(1);
     client.close();
@@ -331,6 +331,34 @@ describe("stream 429", () => {
     client.close();
   });
 
+  test("a 429 between early closes clears the count", async () => {
+    const clock = fakeClock();
+    const ok = (body: string) => () => new Response(body, { status: 200 });
+    // Two early closes, an allowance outage, then one more early close:
+    // never three in a row, so no warning.
+    const { client } = sequenceClient([
+      ok(CONNECTED),
+      ok(CONNECTED),
+      limited,
+      ok(CONNECTED),
+    ]);
+    await runReconnects(clock, client, 3);
+    expect(earlyCloseWarnings()).toHaveLength(0);
+    client.close();
+  });
+
+  test("a longer Retry-After doesn't advance the backoff", async () => {
+    const clock = fakeClock();
+    const serverError = () => new Response("{}", { status: 500 });
+    const { client } = sequenceClient([limited, limited, limited, serverError]);
+    await runReconnects(clock, client, 3);
+    // The first failure without a Retry-After still starts at 1 s.
+    expect(clock.timers.map((timer) => timer.ms)).toEqual([
+      60_000, 60_000, 60_000, 1_000,
+    ]);
+    client.close();
+  });
+
   test("without a valid Retry-After it falls back to backoff", async () => {
     const clock = fakeClock();
     const { client } = rateLimitedClient("soon");
@@ -360,5 +388,11 @@ describe("parseRetryAfterMs", () => {
     expect(parseRetryAfterMs("1e3")).toBeNull();
     expect(parseRetryAfterMs("0x10")).toBeNull();
     expect(parseRetryAfterMs(" 120 ")).toBe(120_000);
+  });
+
+  test("rejects values too large to represent", () => {
+    // Infinity when parsed, and finite seconds that overflow in milliseconds.
+    expect(parseRetryAfterMs("9".repeat(309))).toBeNull();
+    expect(parseRetryAfterMs("9".repeat(306))).toBeNull();
   });
 });

@@ -77,7 +77,7 @@ ft.close();
 
 `stream` values and poll behavior: [Caching and syncs](https://featuretoggle.com/docs/caching). Each stream open uses one sync (about 30 an hour per open tab); use `stream: "off"` to use fewer, since unchanged polls return `304` and don't count.
 
-If the API answers `429` (sync allowance used up), the stream waits for `Retry-After` (at most an hour) before reconnecting, never faster than its usual 1–30 s backoff, and logs one warning per outage. After an upgrade, it tries again within the hour.
+If the API answers `429` (sync allowance used up), the stream waits for `Retry-After` (at most an hour) before reconnecting, never faster than its usual 1–30 s backoff. It logs a warning when the allowance runs out, and again only after the stream has reconnected. After an upgrade, it tries again within the hour.
 
 If the live connection keeps closing within about a minute (often a proxy, a `fetch` timeout or a flaky network), reconnects back off to save syncs and the SDK logs one warning saying so.
 

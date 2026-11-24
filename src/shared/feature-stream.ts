@@ -25,9 +25,10 @@ const EARLY_CLOSES_BEFORE_WARNING = 3;
 export function parseRetryAfterMs(value: string | null): number | null {
   // HTTP's delay-seconds is decimal digits only; anything else gets backoff.
   if (value === null || !/^\d+$/.test(value.trim())) return null;
-  const seconds = Number(value);
-  // 0 would reconnect at once and loop on 429s; fall back to backoff instead.
-  return seconds > 0 ? seconds * 1000 : null;
+  const ms = Number(value) * 1000;
+  // 0 would reconnect at once and loop on 429s, and a huge value overflows
+  // to Infinity; fall back to backoff for both.
+  return ms > 0 && Number.isFinite(ms) ? ms : null;
 }
 
 export class FeatureStreamClient {
@@ -85,10 +86,13 @@ export class FeatureStreamClient {
       this.reconnectTimeout = null;
       void this.connectLoop();
     }, delayMs);
-    this.reconnectDelayMs = Math.min(
-      this.reconnectDelayMs * 2,
-      MAX_RECONNECT_MS,
-    );
+    // Advance the backoff only when it set this wait, not a longer Retry-After.
+    if (delayMs === this.reconnectDelayMs) {
+      this.reconnectDelayMs = Math.min(
+        this.reconnectDelayMs * 2,
+        MAX_RECONNECT_MS,
+      );
+    }
   }
 
   private async connectLoop(): Promise<void> {
@@ -114,6 +118,8 @@ export class FeatureStreamClient {
         // Sync allowance used up: wait until it resets instead of retrying.
         if (response.status === 429) {
           retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
+          // An allowance outage breaks any run of early closes.
+          this.earlyCloses = 0;
           if (!this.warnedRateLimited) {
             this.warnedRateLimited = true;
             console.warn(

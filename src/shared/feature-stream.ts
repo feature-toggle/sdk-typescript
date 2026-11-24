@@ -86,10 +86,13 @@ export class FeatureStreamClient {
       this.reconnectTimeout = null;
       void this.connectLoop();
     }, delayMs);
-    this.reconnectDelayMs = Math.min(
-      this.reconnectDelayMs * 2,
-      MAX_RECONNECT_MS,
-    );
+    // Advance the backoff only when it set this wait, not a longer Retry-After.
+    if (delayMs === this.reconnectDelayMs) {
+      this.reconnectDelayMs = Math.min(
+        this.reconnectDelayMs * 2,
+        MAX_RECONNECT_MS,
+      );
+    }
   }
 
   private async connectLoop(): Promise<void> {

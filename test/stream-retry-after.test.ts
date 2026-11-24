@@ -118,7 +118,7 @@ describe("stream 429", () => {
   });
 
   test("caps Retry-After at an hour, so an upgrade resumes live updates", async () => {
-    for (const retryAfter of ["2592000", "9".repeat(309)]) {
+    for (const retryAfter of ["2592000", "9".repeat(20)]) {
       const clock = fakeClock();
       const { client, calls } = rateLimitedClient(retryAfter);
 
@@ -360,5 +360,11 @@ describe("parseRetryAfterMs", () => {
     expect(parseRetryAfterMs("1e3")).toBeNull();
     expect(parseRetryAfterMs("0x10")).toBeNull();
     expect(parseRetryAfterMs(" 120 ")).toBe(120_000);
+  });
+
+  test("rejects values too large to represent", () => {
+    // Infinity when parsed, and finite seconds that overflow in milliseconds.
+    expect(parseRetryAfterMs("9".repeat(309))).toBeNull();
+    expect(parseRetryAfterMs("9".repeat(306))).toBeNull();
   });
 });

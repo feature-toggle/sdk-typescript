@@ -115,6 +115,8 @@ export class FeatureStreamClient {
         // Sync allowance used up: wait until it resets instead of retrying.
         if (response.status === 429) {
           retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
+          // An allowance outage breaks any run of early closes.
+          this.earlyCloses = 0;
           if (!this.warnedRateLimited) {
             this.warnedRateLimited = true;
             console.warn(

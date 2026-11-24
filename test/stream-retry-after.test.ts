@@ -331,6 +331,22 @@ describe("stream 429", () => {
     client.close();
   });
 
+  test("a 429 between early closes clears the count", async () => {
+    const clock = fakeClock();
+    const ok = (body: string) => () => new Response(body, { status: 200 });
+    // Two early closes, an allowance outage, then one more early close:
+    // never three in a row, so no warning.
+    const { client } = sequenceClient([
+      ok(CONNECTED),
+      ok(CONNECTED),
+      limited,
+      ok(CONNECTED),
+    ]);
+    await runReconnects(clock, client, 3);
+    expect(earlyCloseWarnings()).toHaveLength(0);
+    client.close();
+  });
+
   test("without a valid Retry-After it falls back to backoff", async () => {
     const clock = fakeClock();
     const { client } = rateLimitedClient("soon");

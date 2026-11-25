@@ -16,6 +16,8 @@ const INITIAL_RECONNECT_MS = 1_000;
 const MAX_RECONNECT_MS = 30_000;
 /** Longest wait a `Retry-After` can impose, so an upgrade resumes live updates within the hour. */
 const MAX_RETRY_AFTER_MS = 3_600_000;
+/** Most a `Retry-After` wait is stretched at random, as a fraction of it. */
+const RETRY_AFTER_SPREAD = 0.1;
 /** Pings (~16 s apart) a stream must last before the backoff resets: ~1 min. */
 const PINGS_BEFORE_RESET = 4;
 /** Early closes in a row before warning that something keeps cutting the stream. */
@@ -57,15 +59,19 @@ export class FeatureStreamClient {
   private running = false;
   private warnedRateLimited = false;
   private earlyCloses = 0;
+  /** A number in [0, 1); tests pass a fixed one. */
+  private readonly random: () => number;
 
   constructor(
     fetchFn: FetchFn,
     apiKey: string,
     callbacks: FeatureStreamCallbacks,
+    random: () => number = Math.random,
   ) {
     this.fetchFn = fetchFn;
     this.apiKey = apiKey;
     this.callbacks = callbacks;
+    this.random = random;
   }
 
   start(): void {
@@ -89,24 +95,32 @@ export class FeatureStreamClient {
     }
   }
 
-  /** Reconnects with backoff; `retryAfterMs` can lengthen the wait, up to an hour. */
+  /**
+   * Reconnects after a random wait, so clients dropped together don't all
+   * return at once. The backoff uses equal jitter: between half and all of
+   * the current step (1 s doubling to 30 s). A `Retry-After` is a floor:
+   * the wait is at least what the server asked, up to 10% more at random,
+   * and never over an hour.
+   */
   private scheduleReconnect(retryAfterMs: number | null = null): void {
     if (this.closed || !this.running) return;
     this.clearReconnect();
-    const delayMs = Math.max(
-      this.reconnectDelayMs,
-      Math.min(retryAfterMs ?? 0, MAX_RETRY_AFTER_MS),
-    );
+    const stepMs = this.reconnectDelayMs;
+    let delayMs = stepMs / 2 + (this.random() * stepMs) / 2;
+    if (retryAfterMs !== null) {
+      const spreadMs = Math.min(
+        retryAfterMs * (1 + RETRY_AFTER_SPREAD * this.random()),
+        MAX_RETRY_AFTER_MS,
+      );
+      delayMs = Math.max(delayMs, spreadMs);
+    }
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
       void this.connectLoop();
     }, delayMs);
-    // Advance the backoff only when it set this wait, not a longer Retry-After.
-    if (delayMs === this.reconnectDelayMs) {
-      this.reconnectDelayMs = Math.min(
-        this.reconnectDelayMs * 2,
-        MAX_RECONNECT_MS,
-      );
+    // Advance the backoff unless a longer Retry-After set this wait.
+    if ((retryAfterMs ?? 0) <= stepMs) {
+      this.reconnectDelayMs = Math.min(stepMs * 2, MAX_RECONNECT_MS);
     }
   }
 

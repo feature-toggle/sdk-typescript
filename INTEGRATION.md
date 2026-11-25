@@ -77,9 +77,9 @@ ft.close();
 
 `stream` values, poll behavior and how often streams reconnect: [Caching and syncs](https://featuretoggle.com/docs/caching). Each stream open or reconnect uses one sync; use `stream: "off"` to use fewer, since unchanged polls return `304` and don't count.
 
-If the API answers `429`, the SDK logs the API's reason once (`FeatureToggle: live updates paused: <reason>`), then waits for `Retry-After` (at most an hour) before reconnecting, never faster than its usual 1–30 s backoff. It warns again only after the stream has reconnected. Today the reason is a plan without live updates; features still refresh on load and when the tab regains focus. After an upgrade, it tries again within the hour.
+If the API answers `429`, the SDK logs the API's reason once (`FeatureToggle: live updates paused: <reason>`), then waits for `Retry-After` (plus up to 10% at random, at most an hour) before reconnecting, never faster than its usual backoff. It warns again only after the stream has reconnected. Today the reason is a plan without live updates; features still refresh on load and when the tab regains focus. After an upgrade, it tries again within the hour.
 
-If the live connection keeps closing within about a minute (often a proxy, a `fetch` timeout or a flaky network), reconnects back off to save syncs and the SDK logs one warning saying so.
+Reconnects wait a random part of a backoff that doubles from 1 s to 30 s (between half and all of it), so many clients dropped at once don't all come back at the same moment. If the live connection keeps closing within about a minute (often a proxy, a `fetch` timeout or a flaky network), reconnects back off to save syncs and the SDK logs one warning saying so.
 
 ---
 

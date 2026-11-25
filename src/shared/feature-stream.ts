@@ -20,6 +20,8 @@ const MAX_RETRY_AFTER_MS = 3_600_000;
 const PINGS_BEFORE_RESET = 4;
 /** Early closes in a row before warning that something keeps cutting the stream. */
 const EARLY_CLOSES_BEFORE_WARNING = 3;
+/** Longest API reason a `429` warning prints. */
+const MAX_REASON_LENGTH = 200;
 
 /** `Retry-After` in whole seconds, as the Feature API sends it; null if invalid. */
 export function parseRetryAfterMs(value: string | null): number | null {
@@ -29,6 +31,19 @@ export function parseRetryAfterMs(value: string | null): number | null {
   // 0 would reconnect at once and loop on 429s, and a huge value overflows
   // to Infinity; fall back to backoff for both.
   return ms > 0 && Number.isFinite(ms) ? ms : null;
+}
+
+/** The `error` text of a JSON error body, trimmed and capped; null if there's none. */
+async function readErrorReason(response: Response): Promise<string | null> {
+  try {
+    const body: unknown = await response.json();
+    if (typeof body !== "object" || body === null) return null;
+    const error = (body as { error?: unknown }).error;
+    if (typeof error !== "string") return null;
+    return error.trim().slice(0, MAX_REASON_LENGTH) || null;
+  } catch {
+    return null;
+  }
 }
 
 export class FeatureStreamClient {
@@ -115,16 +130,23 @@ export class FeatureStreamClient {
       );
 
       if (!response.ok || !response.body) {
-        // Sync allowance used up: wait until it resets instead of retrying.
+        // Live updates paused: wait for Retry-After instead of retrying.
         if (response.status === 429) {
           retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
-          // An allowance outage breaks any run of early closes.
+          // A 429 breaks any run of early closes.
           this.earlyCloses = 0;
           if (!this.warnedRateLimited) {
             this.warnedRateLimited = true;
-            console.warn(
-              "FeatureToggle: sync allowance used up; live updates paused until it resets",
-            );
+            // Print the API's own reason, so new reasons need no SDK release.
+            // Read off the loop, so a stalled body can't hold up the reconnect.
+            void readErrorReason(response).then((reason) => {
+              if (this.closed) return;
+              console.warn(
+                reason === null
+                  ? "FeatureToggle: live updates paused (HTTP 429); retrying later"
+                  : `FeatureToggle: live updates paused: ${reason}`,
+              );
+            });
           }
         }
         return; // `finally` reconnects.
@@ -146,7 +168,7 @@ export class FeatureStreamClient {
           this.callbacks.onEvent?.(event);
           if (event.event === "connected") {
             connected = true;
-            // Live again: warn if a new allowance runs out.
+            // Live again: warn on the next 429.
             this.warnedRateLimited = false;
           }
           // Held open ~1 min: reset the backoff. A stream cut sooner keeps

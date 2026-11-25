@@ -27,12 +27,16 @@ function fakeClock() {
 
 const flush = () => new Promise((resolve) => realSetTimeout(resolve, 0));
 
-function rateLimitedClient(retryAfter: string) {
+/** A client whose every stream answers `429` with `body` (a factory for one-shot streams). */
+function rateLimitedClient(
+  retryAfter: string,
+  body: string | (() => BodyInit) = '{"error":"limit"}',
+) {
   let calls = 0;
   const fetchFn = (() => {
     calls += 1;
     return Promise.resolve(
-      new Response('{"error":"limit"}', {
+      new Response(typeof body === "string" ? body : body(), {
         status: 429,
         headers: { "Retry-After": retryAfter },
       }),
@@ -188,8 +192,8 @@ describe("stream 429", () => {
     return { client, calls: () => calls };
   }
 
-  const allowanceWarnings = () =>
-    warnings.filter((args) => String(args[0]).includes("sync allowance"));
+  const rateLimitWarnings = () =>
+    warnings.filter((args) => String(args[0]).includes("live updates paused"));
 
   /** Fires the newest timer, asserting it is new and has the expected delay. */
   async function fireNext(
@@ -215,7 +219,7 @@ describe("stream 429", () => {
 
     client.start();
     await flush();
-    expect(allowanceWarnings()).toHaveLength(1);
+    expect(rateLimitWarnings()).toHaveLength(1);
 
     // Allowance reset: the stream connects, then ends.
     await fireNext(clock, 0, 60_000);
@@ -224,7 +228,7 @@ describe("stream 429", () => {
     // Runs out again: the user hears about it again.
     await fireNext(clock, 1, 1_000);
     expect(calls()).toBe(3);
-    expect(allowanceWarnings()).toHaveLength(2);
+    expect(rateLimitWarnings()).toHaveLength(2);
     client.close();
   });
 
@@ -242,7 +246,7 @@ describe("stream 429", () => {
     // No `ping`, so the backoff wasn't reset: 2 s, not 1 s.
     await fireNext(clock, 2, 2_000);
     // `connected` re-armed the warning, so the next 429 warns again.
-    expect(allowanceWarnings()).toHaveLength(2);
+    expect(rateLimitWarnings()).toHaveLength(2);
     client.close();
   });
 
@@ -258,7 +262,7 @@ describe("stream 429", () => {
     await fireNext(clock, 0, 60_000);
     await fireNext(clock, 1, 1_000);
     expect(calls()).toBe(3);
-    expect(allowanceWarnings()).toHaveLength(1);
+    expect(rateLimitWarnings()).toHaveLength(1);
     client.close();
   });
 
@@ -357,6 +361,140 @@ describe("stream 429", () => {
       60_000, 60_000, 60_000, 1_000,
     ]);
     client.close();
+  });
+
+  const PAID_PLAN =
+    "FeatureToggle: live updates paused: Live updates need a paid plan.";
+  const GENERIC =
+    "FeatureToggle: live updates paused (HTTP 429); retrying later";
+
+  test("logs the API's reason once, and waits for Retry-After", async () => {
+    const clock = fakeClock();
+    const { client, calls } = rateLimitedClient(
+      "3600",
+      '{"error":"Live updates need a paid plan."}',
+    );
+    await runReconnects(clock, client, 3);
+    expect(calls()).toBe(4);
+    expect(warnings).toEqual([[PAID_PLAN]]);
+    expect(clock.timers.map((timer) => timer.ms)).toEqual([
+      3_600_000, 3_600_000, 3_600_000, 3_600_000,
+    ]);
+    client.close();
+  });
+
+  test("the reason doesn't change the waits or reconnects", async () => {
+    const run = async (body: string) => {
+      const clock = fakeClock();
+      const { client, calls } = rateLimitedClient("1", body);
+      await runReconnects(clock, client, 3);
+      client.close();
+      return {
+        warnings,
+        calls: calls(),
+        delays: clock.timers.map((timer) => timer.ms),
+      };
+    };
+    const plan = await run('{"error":"Live updates need a paid plan."}');
+    const limit = await run('{"error":"limit"}');
+    expect(plan.warnings).toEqual([[PAID_PLAN]]);
+    expect(limit.warnings).toEqual([
+      ["FeatureToggle: live updates paused: limit"],
+    ]);
+    expect(limit.calls).toBe(plan.calls);
+    expect(limit.delays).toEqual(plan.delays);
+  });
+
+  test("a body without a usable reason logs the generic line", async () => {
+    const failingRead = () =>
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.error(new Error("connection reset"));
+        },
+      });
+    for (const body of [
+      "not json",
+      "",
+      "{}",
+      '{"error":42}',
+      "[]",
+      "null",
+      '{"error":"  "}',
+      failingRead,
+    ]) {
+      const clock = fakeClock();
+      const { client, calls } = rateLimitedClient("120", body);
+      await runReconnects(clock, client, 1);
+      expect(warnings).toEqual([[GENERIC]]);
+      expect(calls()).toBe(2);
+      expect(clock.timers.map((timer) => timer.ms)).toEqual([120_000, 120_000]);
+      client.close();
+    }
+  });
+
+  test("trims the reason and caps it at 200 characters", async () => {
+    fakeClock();
+    const { client } = rateLimitedClient(
+      "120",
+      JSON.stringify({ error: `  ${"x".repeat(500)}` }),
+    );
+    client.start();
+    await flush();
+    expect(warnings).toEqual([
+      [`FeatureToggle: live updates paused: ${"x".repeat(200)}`],
+    ]);
+    client.close();
+  });
+
+  /** A body that stays open until `release()` sends `{"error":"limit"}`. */
+  function stalledBody() {
+    let release = () => {};
+    const body = () =>
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          return new Promise<void>((resolve) => {
+            release = () => {
+              controller.enqueue(new TextEncoder().encode('{"error":"limit"}'));
+              controller.close();
+              resolve();
+            };
+          });
+        },
+      });
+    return { body, release: () => release() };
+  }
+
+  test("a stalled body doesn't hold up the reconnect", async () => {
+    const clock = fakeClock();
+    const stalled = stalledBody();
+    const { client, calls } = rateLimitedClient("120", stalled.body);
+
+    client.start();
+    await flush();
+    expect(clock.timers.map((timer) => timer.ms)).toEqual([120_000]);
+    expect(warnings).toHaveLength(0);
+
+    stalled.release();
+    await flush();
+    expect(warnings).toEqual([["FeatureToggle: live updates paused: limit"]]);
+    expect(calls()).toBe(1);
+    client.close();
+  });
+
+  test("close() while reading the body logs nothing and doesn't reconnect", async () => {
+    const clock = fakeClock();
+    const stalled = stalledBody();
+    const { client, calls } = rateLimitedClient("120", stalled.body);
+
+    client.start();
+    await flush();
+    client.close();
+    stalled.release();
+    await flush();
+    clock.timers.at(-1)?.fn();
+    await flush();
+    expect(warnings).toHaveLength(0);
+    expect(calls()).toBe(1);
   });
 
   test("without a valid Retry-After it falls back to backoff", async () => {
